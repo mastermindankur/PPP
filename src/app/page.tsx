@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import type React from 'react';
@@ -12,11 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { getPPPData, getCountries, getLatestAvailableYear } from '@/services/ppp-data'; // Added getLatestAvailableYear
+import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData } from '@/services/ppp-data'; // Added getLatestAvailableYear, getHistoricalPPPData
 import { getCurrencyData } from '@/services/currency-data';
-import type { PPPData, CountryInfo } from '@/services/ppp-data';
+import type { PPPData, CountryInfo, HistoricalDataPoint } from '@/services/ppp-data';
 import type { CurrencyData } from '@/services/currency-data';
 import { Skeleton } from "@/components/ui/skeleton";
+import PPPChart from '@/components/ppp-chart'; // Import the new chart component
 
 // Define the base schema structure first
 const baseFormSchema = z.object({
@@ -41,6 +41,13 @@ interface CalculationResult {
   year: number; // Add year to result
 }
 
+export type ChartDataPoint = {
+  year: number;
+  ratio: number;
+  label: string; // For tooltip/legend
+};
+
+
 export default function Home() {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -50,6 +57,9 @@ export default function Home() {
   const [countryOptions, setCountryOptions] = useState<CountryInfo[]>([]);
   const [latestYear, setLatestYear] = useState<number | null>(null);
   const [formSchema, setFormSchema] = useState<z.ZodSchema<any> | null>(null); // State for the dynamic schema
+  const [historicalData, setHistoricalData] = useState<ChartDataPoint[] | null>(null);
+  const [isFetchingHistoricalData, setIsFetchingHistoricalData] = useState(false);
+
 
   // UseEffect to fetch initial data (countries and latest year)
   useEffect(() => {
@@ -78,7 +88,7 @@ export default function Home() {
           const fullSchema = baseFormSchema.extend({
             year: z.preprocess(
               (val) => (val === "" ? undefined : Number(val)),
-              z.number().int().min(1960, "Year must be 1960 or later.")
+              z.number().int().min(1990, "Year must be 1990 or later.") // Adjusted min year based on common data availability
                 .max(fetchedLatestYear, `Data only available up to ${fetchedLatestYear}.`)
             ),
           });
@@ -121,6 +131,9 @@ export default function Home() {
     setIsLoading(true);
     setError(null);
     setResult(null);
+    setHistoricalData(null); // Reset historical data on new calculation
+    setIsFetchingHistoricalData(false); // Reset historical fetch state
+
 
     if (values.country1 === values.country2) {
       setError("Please select two different countries.");
@@ -156,13 +169,13 @@ export default function Home() {
 
 
       if (!pppData1 || !pppData2) {
-        setError(`PPP data not available for one or both selected countries/year combination (${values.country1}/${values.country2}, ${values.year}). Please try a different year or check data availability.`);
+        setError(`PPP data not available for one or both selected countries/year combination (${country1Info.name}/${country2Info.name}, ${values.year}). Please try a different year or check data availability.`);
         setIsLoading(false);
         return;
       }
 
       if (!currencyData1 || !currencyData2) {
-         console.warn(`Currency data not available for ${values.country1} or ${values.country2}. Displaying result without symbols.`);
+         console.warn(`Currency data not available for ${country1Info.name} or ${country2Info.name}. Displaying result without symbols.`);
       }
 
       const pppRatio = pppData2.pppConversionFactor / pppData1.pppConversionFactor;
@@ -177,6 +190,10 @@ export default function Home() {
         year: values.year, // Include year in the result
       });
 
+      // After successful calculation, fetch historical data
+      fetchHistorical(values.country1, values.country2, country1Info.name, country2Info.name);
+
+
     } catch (err) {
       console.error("Calculation error:", err);
       setError("An error occurred during calculation. Please try again.");
@@ -184,6 +201,51 @@ export default function Home() {
       setIsLoading(false);
     }
   }
+
+  // Function to fetch and process historical data
+  const fetchHistorical = async (code1: string, code2: string, name1: string, name2: string) => {
+    setIsFetchingHistoricalData(true);
+    setHistoricalData(null); // Clear previous chart data
+    try {
+      const [history1, history2] = await Promise.all([
+        getHistoricalPPPData(code1),
+        getHistoricalPPPData(code2),
+      ]);
+
+      const combinedData: ChartDataPoint[] = [];
+      const years = new Set([...history1.map(d => d.year), ...history2.map(d => d.year)]);
+
+      years.forEach(year => {
+        const ppp1 = history1.find(d => d.year === year)?.pppConversionFactor;
+        const ppp2 = history2.find(d => d.year === year)?.pppConversionFactor;
+
+        if (ppp1 && ppp2 && ppp1 > 0 && ppp2 > 0) { // Ensure both values exist and are valid
+          combinedData.push({
+            year: year,
+            ratio: ppp2 / ppp1, // Ratio: How many units of country2 currency per unit of country1 currency
+            label: `${name1} vs ${name2} PPP Ratio`
+          });
+        }
+      });
+
+      // Sort by year
+      combinedData.sort((a, b) => a.year - b.year);
+
+      if (combinedData.length > 0) {
+        setHistoricalData(combinedData);
+      } else {
+         console.warn(`No common historical PPP data found for ${name1} and ${name2}.`);
+         // Optionally set an error or message state for the chart
+      }
+
+    } catch (error) {
+      console.error("Failed to fetch or process historical PPP data:", error);
+       // Optionally set an error or message state for the chart
+    } finally {
+      setIsFetchingHistoricalData(false);
+    }
+  };
+
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 md:p-12 bg-background">
@@ -222,7 +284,11 @@ export default function Home() {
                     <FormItem>
                       <FormLabel>From Country</FormLabel>
                       <Select
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          setResult(null); // Clear results when country changes
+                          setHistoricalData(null);
+                        }}
                         value={field.value} // Use value for controlled component
                         disabled={countryOptions.length === 0}
                        >
@@ -253,7 +319,11 @@ export default function Home() {
                     <FormItem>
                       <FormLabel>To Country</FormLabel>
                       <Select
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                           field.onChange(value);
+                           setResult(null); // Clear results when country changes
+                           setHistoricalData(null);
+                        }}
                         value={field.value} // Use value for controlled component
                         disabled={countryOptions.length === 0}
                         >
@@ -284,7 +354,7 @@ export default function Home() {
                     name="amount"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Amount</FormLabel>
+                        <FormLabel>Amount ({result?.currency1?.currencySymbol || '...'})</FormLabel>
                         <FormControl>
                            {/* Ensure value is handled correctly for number input */}
                           <Input
@@ -312,7 +382,7 @@ export default function Home() {
                            <Input
                              type="number"
                              placeholder={`e.g., ${latestYear || new Date().getFullYear()}`}
-                             min="1960"
+                             min="1990" // Adjusted min year
                              max={latestYear ?? new Date().getFullYear()} // Use dynamic max year
                              className="bg-secondary focus:bg-background"
                              {...field}
@@ -343,28 +413,50 @@ export default function Home() {
 
           {result && !isLoading && (
             <div className="mt-8 p-6 bg-accent/10 rounded-lg text-center border border-accent">
-              <p className="text-lg text-foreground">
-                <span className="font-semibold">{result.currency1?.currencySymbol || ''}{form.getValues('amount').toLocaleString()}</span> in {result.country1Name} ({result.year})
-              </p>
-              <p className="text-lg text-foreground mt-1">
-                has the same purchasing power as
-              </p>
-              <p className="text-3xl font-bold text-accent mt-2">
-                {result.currency2?.currencySymbol || ''}{result.equivalentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-lg text-foreground mt-1">
-                in {result.country2Name} ({result.year}).
-              </p>
-               {(!result.currency1?.currencySymbol || !result.currency2?.currencySymbol) && (
-                   <p className="text-sm text-muted-foreground mt-2">(Currency symbols might be missing for some selections)</p>
-               )}
-            </div>
+               <p className="text-lg text-foreground">
+                 <span className="font-semibold">{result.currency1?.currencySymbol || ''}{form.getValues('amount').toLocaleString()}</span> in {result.country1Name} ({result.year})
+               </p>
+               <p className="text-lg text-foreground mt-1">
+                 has the same purchasing power as
+               </p>
+               <p className="text-3xl font-bold text-accent mt-2">
+                 {result.currency2?.currencySymbol || ''}{result.equivalentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+               </p>
+               <p className="text-lg text-foreground mt-1">
+                 in {result.country2Name} ({result.year}).
+               </p>
+                {(!result.currency1?.currencySymbol || !result.currency2?.currencySymbol) && (
+                    <p className="text-sm text-muted-foreground mt-2">(Currency symbols might be missing for some selections)</p>
+                )}
+             </div>
           )}
+
+           {/* Historical Data Chart */}
+           {result && !isLoading && ( // Show chart area only after a successful calculation
+             <div className="mt-8">
+               <h3 className="text-xl font-semibold text-center mb-4">Historical PPP Ratio Trend</h3>
+               {isFetchingHistoricalData ? (
+                  <div className="flex justify-center items-center h-64">
+                     <Skeleton className="h-full w-full" />
+                     <p className="absolute text-muted-foreground">Loading historical data...</p>
+                  </div>
+               ) : historicalData && historicalData.length > 0 ? (
+                  <PPPChart data={historicalData} />
+               ) : historicalData && historicalData.length === 0 ? (
+                 <p className="text-center text-muted-foreground p-4 border rounded-md">No common historical data found for the selected countries.</p>
+               ) : !isFetchingHistoricalData && !historicalData ? (
+                  <p className="text-center text-muted-foreground p-4 border rounded-md">Historical data will appear here after calculation.</p>
+               ) : null}
+             </div>
+           )}
+
         </CardContent>
       </Card>
        <footer className="mt-8 text-center text-sm text-muted-foreground px-4">
-         Data sourced from World Bank (Indicator: PA.NUS.PPP). Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data.
+         Data sourced from World Bank (Indicator: PA.NUS.PPP). Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data. Historical chart shows the ratio of Country 2's PPP factor to Country 1's PPP factor.
       </footer>
     </main>
   );
 }
+
+    

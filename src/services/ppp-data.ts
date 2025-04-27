@@ -4,7 +4,7 @@
 import * as XLSX from 'xlsx';
 
 /**
- * Represents Purchasing Power Parity (PPP) data for a specific country.
+ * Represents Purchasing Power Parity (PPP) data for a specific country and year.
  */
 export interface PPPData {
   /**
@@ -32,8 +32,19 @@ export interface CountryInfo {
     // flag?: string;
 }
 
+/**
+ * Represents a single data point for historical PPP data.
+ */
+export interface HistoricalDataPoint {
+    year: number;
+    pppConversionFactor: number;
+}
+
+
 // Cache to store parsed PPP data { year: { countryCode: pppValue } }
 let pppDataCache: { [year: number]: { [countryCode: string]: number } } | null = null;
+// Cache to store historical data per country { countryCode: [ {year, pppValue}, ... ] }
+let historicalDataCache: { [countryCode: string]: HistoricalDataPoint[] } | null = null;
 let countriesCache: CountryInfo[] | null = null;
 let cachedLatestYear: number | null = null; // Cache for the latest year found
 let isFetchingData = false; // Prevent concurrent fetches
@@ -48,7 +59,7 @@ const worldBankApiUrl = 'https://api.worldbank.org/v2/en/indicator/PA.NUS.PPP?do
  * @returns A promise that resolves when the cache is populated or rejects on error.
  */
 async function fetchAndCachePPPData(): Promise<void> {
-    if (pppDataCache && countriesCache && cachedLatestYear !== null) {
+    if (pppDataCache && countriesCache && cachedLatestYear !== null && historicalDataCache) {
         console.log("Data already cached.");
         return Promise.resolve(); // Already cached
     }
@@ -118,20 +129,25 @@ async function fetchAndCachePPPData(): Promise<void> {
           // Find column indices
           const countryNameIndex = headers.findIndex(h => h === 'Country Name');
           const countryCodeIndex = headers.findIndex(h => h === 'Country Code');
-          // Year columns: Find all columns that are 4-digit numbers
+          // Year columns: Find all columns that are 4-digit numbers starting from 1990
           const yearColumns = headers
               .map((h, index) => ({ header: String(h).trim(), index }))
-              .filter(({ header }) => /^\d{4}$/.test(header));
+              .filter(({ header }) => /^\d{4}$/.test(header) && parseInt(header, 10) >= 1990); // Filter years >= 1990
 
-          if (countryNameIndex === -1 || countryCodeIndex === -1 || yearColumns.length === 0) {
-               throw new Error('Could not find required columns (Country Name, Country Code, Year columns) in header row.');
-          }
+           if (countryNameIndex === -1 || countryCodeIndex === -1) {
+                throw new Error('Could not find required columns (Country Name, Country Code) in header row.');
+           }
+           if (yearColumns.length === 0) {
+               console.warn('No year columns found from 1990 onwards in the header row. Historical data might be limited.');
+           }
+
 
           const years = yearColumns.map(yc => parseInt(yc.header, 10));
-          const latestAvailableYear = Math.max(...years);
+          const latestAvailableYear = Math.max(...years, 0); // Use 0 as default if no years found
           const yearIndicesMap = new Map(yearColumns.map(yc => [parseInt(yc.header, 10), yc.index]));
 
           const tempPppDataCache: { [year: number]: { [countryCode: string]: number } } = {};
+          const tempHistoricalDataCache: { [countryCode: string]: HistoricalDataPoint[] } = {};
           const tempCountriesMap = new Map<string, CountryInfo>();
           const dataRows = jsonData.slice(dataStartIndex);
 
@@ -146,22 +162,33 @@ async function fetchAndCachePPPData(): Promise<void> {
                   // Add to countries list (unique by code)
                   if (!tempCountriesMap.has(countryCode)) {
                       tempCountriesMap.set(countryCode, { name: countryName, code: countryCode });
+                      tempHistoricalDataCache[countryCode] = []; // Initialize historical array
                   }
 
-                  // Add PPP data to cache for all valid years
+                  // Add PPP data to caches for all valid years >= 1990
                   years.forEach((year) => {
                       const yearIndex = yearIndicesMap.get(year);
                       if (yearIndex === undefined) return; // Should not happen
 
                       const pppValueRaw = row[yearIndex];
                       // World bank uses '..' for no data, check for numbers, exclude 0 if it's invalid
-                      if (typeof pppValueRaw === 'number' && !isNaN(pppValueRaw) && pppValueRaw !== 0) {
+                      if (typeof pppValueRaw === 'number' && !isNaN(pppValueRaw) && pppValueRaw > 0) { // Ensure > 0
+                          // Populate year-based cache
                           if (!tempPppDataCache[year]) {
                               tempPppDataCache[year] = {};
                           }
                           tempPppDataCache[year][countryCode] = pppValueRaw;
+
+                          // Populate country-based historical cache
+                          if (tempHistoricalDataCache[countryCode]) {
+                              tempHistoricalDataCache[countryCode].push({ year: year, pppConversionFactor: pppValueRaw });
+                          }
                       }
                   });
+                   // Sort historical data for the country by year
+                   if (tempHistoricalDataCache[countryCode]) {
+                       tempHistoricalDataCache[countryCode].sort((a, b) => a.year - b.year);
+                   }
               }
           });
 
@@ -171,15 +198,17 @@ async function fetchAndCachePPPData(): Promise<void> {
 
           // Commit to cache
           pppDataCache = tempPppDataCache;
+          historicalDataCache = tempHistoricalDataCache;
           countriesCache = uniqueCountries;
-          cachedLatestYear = latestAvailableYear; // Cache the latest year
+          cachedLatestYear = latestAvailableYear > 0 ? latestAvailableYear : null; // Set to null if no valid years
 
-          console.log(`Successfully fetched and cached data. ${uniqueCountries.length} countries found. Latest year: ${latestAvailableYear}`);
+          console.log(`Successfully fetched and cached data. ${uniqueCountries.length} countries found. Latest year with data >= 1990: ${cachedLatestYear}`);
 
       } catch (error) {
           console.error('Error fetching or processing World Bank PPP data:', error);
           // Reset cache on error to allow retry
           pppDataCache = null;
+          historicalDataCache = null;
           countriesCache = null;
           cachedLatestYear = null;
           fetchPromise = null; // Reset promise on error
@@ -214,13 +243,13 @@ export async function getCountries(): Promise<CountryInfo[]> {
 }
 
 /**
- * Retrieves the latest year for which PPP data is available in the cache.
+ * Retrieves the latest year for which PPP data is available in the cache (since 1990).
  * If the cache is empty, it triggers the data fetching process.
  *
- * @returns A promise that resolves to the latest available year (number) or null if data cannot be loaded.
+ * @returns A promise that resolves to the latest available year (number) or null if data cannot be loaded or no data >= 1990 exists.
  */
 export async function getLatestAvailableYear(): Promise<number | null> {
-    if (cachedLatestYear === null) {
+    if (cachedLatestYear === null && !isFetchingData) { // Check isFetchingData to avoid infinite loop on initial load error
         try {
             await fetchAndCachePPPData();
         } catch (error) {
@@ -228,7 +257,7 @@ export async function getLatestAvailableYear(): Promise<number | null> {
             return null; // Return null on failure
         }
     }
-    return cachedLatestYear; // Return cached year or null if fetch failed
+    return cachedLatestYear; // Return cached year or null if fetch failed/no data
 }
 
 
@@ -261,22 +290,17 @@ export async function getPPPData(
 
     const yearData = pppDataCache[year];
     if (!yearData) {
-        console.warn(`PPP data not found in cache for year: ${year}.`);
+        // console.warn(`PPP data not found in cache for year: ${year}.`); // Less noisy log
         return null;
     }
 
     const pppFactor = yearData[countryCode];
     if (pppFactor === undefined) {
-        console.warn(`PPP data not found in cache for country code ${countryCode} in year ${year}.`);
+        // console.warn(`PPP data not found in cache for country code ${countryCode} in year ${year}.`); // Less noisy log
         return null;
     }
 
-    // Validate PPP factor (optional, basic check)
-    if (typeof pppFactor !== 'number' || isNaN(pppFactor) || pppFactor <= 0) {
-         console.warn(`Invalid PPP factor found for ${countryCode} in ${year}: ${pppFactor}`);
-         return null;
-    }
-
+    // Validation happened during caching (pppFactor > 0)
 
     return {
         countryCode,
@@ -284,3 +308,40 @@ export async function getPPPData(
         year,
     };
 }
+
+
+/**
+ * Asynchronously retrieves all available historical PPP data points for a given country code from the cache.
+ * Relies on `fetchAndCachePPPData` having been called successfully first to populate the cache.
+ *
+ * @param countryCode The 3-letter country code (e.g., 'USA', 'IND').
+ * @returns A promise that resolves to an array of HistoricalDataPoint objects, or an empty array if no data is found.
+ */
+export async function getHistoricalPPPData(
+    countryCode: string
+): Promise<HistoricalDataPoint[]> {
+    if (!historicalDataCache) {
+         console.warn("Historical PPP data cache is not populated. Ensuring data is fetched first...");
+         try {
+             await fetchAndCachePPPData();
+         } catch (error) {
+             console.error("Failed to populate historical PPP cache before getting data:", error);
+             return []; // Return empty on failure
+         }
+         if (!historicalDataCache) {
+             console.error("Historical cache population failed unexpectedly after fetch.");
+             return [];
+         }
+    }
+
+    const countryHistory = historicalDataCache[countryCode];
+
+    if (!countryHistory) {
+        console.warn(`No historical PPP data found in cache for country code: ${countryCode}.`);
+        return [];
+    }
+
+    return countryHistory; // Returns the cached (and sorted) array
+}
+
+    
