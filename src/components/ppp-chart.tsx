@@ -62,9 +62,8 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
      return `${currencySymbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
    };
 
-    // Prepare ticks for X-axis to show all available years
-    const yearTicks = data.map(d => d.year);
-    // Removed interval calculation as we are angling labels
+    // Prepare ticks for X-axis to show all available years - Removed explicit ticks
+    // const yearTicks = data.map(d => d.year);
 
   return (
     <ChartContainer config={chartConfig} className="min-h-[200px] w-full h-80"> {/* Increased height */}
@@ -73,9 +72,9 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
           data={data}
           margin={{
             top: 5,
-            right: 40, // Adjusted margins for potentially angled/longer labels
+            right: 40, // Adjusted margins for potentially longer labels
             left: 30,
-            bottom: 25, // Increased bottom margin for angled labels
+            bottom: 5, // Reduced bottom margin as labels might not be angled anymore
           }}
           accessibilityLayer // Add accessibility layer
         >
@@ -84,17 +83,17 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
             dataKey="year" // X-axis represents the year
             type="number" // Treat year as a number
             domain={['dataMin', 'dataMax']} // Use data min/max for domain
-            ticks={yearTicks} // Explicitly set ticks to all available years
+            // ticks={yearTicks} // REMOVED: Let Recharts handle ticks automatically
             tickLine={false}
             axisLine={false}
-            tickMargin={10} // Increased margin for angled labels
+            tickMargin={10} // Keep some margin
             padding={{ left: 15, right: 15 }} // Add padding
             aria-label="Year"
             tickFormatter={(value) => value.toString()} // Ensure year is displayed as string
-            angle={-45} // Angle the labels to prevent overlap
-            textAnchor="end" // Anchor angled labels correctly
-            height={50} // Allocate more height for angled labels
-            interval={0} // Try to show every tick specified in `ticks` array
+            // angle={-45} // Optional: remove or keep depending on visual result
+            // textAnchor="end" // Optional: remove or keep depending on visual result
+            // height={50} // Optional: adjust height if angle is removed
+            interval="preserveStartEnd" // Suggests showing start/end labels, lets Recharts optimize others
           />
           <YAxis
              // Y-axis implicitly uses the 'equivalentAmount' from the Line component
@@ -156,6 +155,5 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
     </ChartContainer>
   )
 }
-
 
     
