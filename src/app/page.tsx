@@ -10,83 +10,114 @@ import * as z from 'zod';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label"; // Keep Label if used elsewhere, otherwise remove
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { getPPPData, getCountries } from '@/services/ppp-data';
+import { getPPPData, getCountries, getLatestAvailableYear } from '@/services/ppp-data'; // Added getLatestAvailableYear
 import { getCurrencyData } from '@/services/currency-data';
 import type { PPPData, CountryInfo } from '@/services/ppp-data';
 import type { CurrencyData } from '@/services/currency-data';
-import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
+import { Skeleton } from "@/components/ui/skeleton";
 
-const formSchema = z.object({
-  // Use country *code* for the value
+// Define the base schema structure first
+const baseFormSchema = z.object({
   country1: z.string().min(1, "Please select the first country."),
   country2: z.string().min(1, "Please select the second country."),
   amount: z.preprocess(
     (val) => (val === "" ? undefined : Number(val)),
     z.number().positive("Amount must be a positive number.")
   ),
-  year: z.preprocess(
-    (val) => (val === "" ? undefined : Number(val)),
-    // Update year range based on actual data availability if known, keep dynamic for now
-    z.number().int().min(1960, "Year must be 1960 or later.").max(new Date().getFullYear(), `Year cannot be in the future. Max year is ${new Date().getFullYear()}.`)
-  ),
+  // Year validation will be added dynamically
 });
 
-type FormData = z.infer<typeof formSchema>;
+// Type derived from the base schema
+type BaseFormData = z.infer<typeof baseFormSchema>;
 
 interface CalculationResult {
   equivalentAmount: number;
-  currency1: CurrencyData | null; // Allow null if not found
-  currency2: CurrencyData | null; // Allow null if not found
+  currency1: CurrencyData | null;
+  currency2: CurrencyData | null;
   country1Name: string;
   country2Name: string;
+  year: number; // Add year to result
 }
 
 export default function Home() {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isCountriesLoading, setIsCountriesLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true); // Combined loading state
   const [error, setError] = useState<string | null>(null);
-  const [countriesError, setCountriesError] = useState<string | null>(null);
+  const [dataLoadError, setDataLoadError] = useState<string | null>(null);
   const [countryOptions, setCountryOptions] = useState<CountryInfo[]>([]);
+  const [latestYear, setLatestYear] = useState<number | null>(null);
+  const [formSchema, setFormSchema] = useState<z.ZodSchema<any> | null>(null); // State for the dynamic schema
 
+  // UseEffect to fetch initial data (countries and latest year)
   useEffect(() => {
-    async function fetchCountries() {
-      setIsCountriesLoading(true);
-      setCountriesError(null);
+    async function fetchInitialData() {
+      setIsInitialLoading(true);
+      setDataLoadError(null);
       try {
-        // getCountries now handles fetching and caching, and returns empty on error
-        const fetchedCountries = await getCountries();
+        // Fetch countries and latest year concurrently
+        const [fetchedCountries, fetchedLatestYear] = await Promise.all([
+          getCountries(),
+          getLatestAvailableYear()
+        ]);
+
         setCountryOptions(fetchedCountries);
+        setLatestYear(fetchedLatestYear);
+
         if (fetchedCountries.length === 0) {
-           // Keep a user-friendly error if the list is truly empty after fetch attempt
-           setCountriesError("Could not load country list. Please check your connection or try again later.");
-           console.warn("Country list is empty after fetching.");
+          setDataLoadError("Could not load country list. Please check your connection or try again later.");
+          console.warn("Country list is empty after fetching.");
         }
+        if (fetchedLatestYear === null) {
+           setDataLoadError((prevError) => prevError ? `${prevError} Could not determine the latest data year.` : "Could not determine the latest data year.");
+           console.warn("Latest year could not be determined.");
+        } else {
+          // Dynamically create the full form schema once the latest year is known
+          const fullSchema = baseFormSchema.extend({
+            year: z.preprocess(
+              (val) => (val === "" ? undefined : Number(val)),
+              z.number().int().min(1960, "Year must be 1960 or later.")
+                .max(fetchedLatestYear, `Data only available up to ${fetchedLatestYear}.`)
+            ),
+          });
+          setFormSchema(fullSchema);
+        }
+
       } catch (err) {
-        // Catch potential re-thrown errors from fetchAndCachePPPData
-        console.error("Failed to fetch countries:", err);
-        setCountriesError("Failed to load country list. An error occurred.");
+        console.error("Failed to fetch initial data:", err);
+        setDataLoadError("Failed to load required data. An error occurred.");
       } finally {
-        setIsCountriesLoading(false);
+        setIsInitialLoading(false);
       }
     }
-    fetchCountries();
-  }, []);
+    fetchInitialData();
+  }, []); // Run only once on mount
 
-  const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+  // Initialize the form - Re-initialize when schema is ready
+  const form = useForm<BaseFormData & { year?: number }>({ // Add optional year initially
+    resolver: formSchema ? zodResolver(formSchema) : undefined, // Use dynamic schema when available
     defaultValues: {
-      country1: '', // Default to empty, user must select
-      country2: '', // Default to empty, user must select
+      country1: '',
+      country2: '',
       amount: 100,
-      year: 2022, // Default to a recent year, adjust if needed
+      // Default year will be set once latestYear is fetched
     },
   });
 
-  async function onSubmit(values: FormData) {
+   // Effect to update default year once latestYear is fetched and schema is set
+   useEffect(() => {
+     if (latestYear && formSchema) {
+       form.reset({
+         ...form.getValues(), // Keep other values
+         year: latestYear, // Set default year
+       });
+     }
+   }, [latestYear, formSchema, form]); // Depend on latestYear and formSchema
+
+
+  async function onSubmit(values: BaseFormData & { year: number }) { // Year is now required
     setIsLoading(true);
     setError(null);
     setResult(null);
@@ -98,19 +129,18 @@ export default function Home() {
     }
 
     try {
-       // Ensure country options are loaded before proceeding
+      // Ensure country options are loaded
       if (countryOptions.length === 0) {
-         setError("Country data is still loading or failed to load. Please wait or refresh.");
+         setError("Country data is not available. Please wait or refresh.");
          setIsLoading(false);
          return;
       }
 
       // Fetch PPP data using country *codes*
-      // getPPPData now uses the cache populated by getCountries
       const [pppData1, pppData2, currencyData1, currencyData2] = await Promise.all([
         getPPPData(values.country1, values.year),
         getPPPData(values.country2, values.year),
-        getCurrencyData(values.country1), // Assume getCurrencyData uses the code
+        getCurrencyData(values.country1),
         getCurrencyData(values.country2),
       ]);
 
@@ -119,7 +149,6 @@ export default function Home() {
       const country2Info = countryOptions.find(c => c.code === values.country2);
 
        if (!country1Info || !country2Info) {
-         // This shouldn't happen if validation passes and countryOptions is populated
          setError(`Could not find country information for the selected codes.`);
          setIsLoading(false);
          return;
@@ -131,27 +160,26 @@ export default function Home() {
         setIsLoading(false);
         return;
       }
-      // Basic currency data check - enhance getCurrencyData if needed
+
       if (!currencyData1 || !currencyData2) {
          console.warn(`Currency data not available for ${values.country1} or ${values.country2}. Displaying result without symbols.`);
-         // Allow calculation but log warning or handle default symbols
       }
-
 
       const pppRatio = pppData2.pppConversionFactor / pppData1.pppConversionFactor;
       const equivalentAmount = values.amount * pppRatio;
 
       setResult({
         equivalentAmount,
-        currency1: currencyData1, // Can be null
-        currency2: currencyData2, // Can be null
+        currency1: currencyData1,
+        currency2: currencyData2,
         country1Name: country1Info.name,
         country2Name: country2Info.name,
+        year: values.year, // Include year in the result
       });
 
     } catch (err) {
       console.error("Calculation error:", err);
-      setError("An error occurred during calculation. Please check console for details.");
+      setError("An error occurred during calculation. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -167,10 +195,10 @@ export default function Home() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {countriesError && !isCountriesLoading && ( // Show error only if not loading
-            <p className="mb-4 text-center text-destructive font-medium">{countriesError}</p>
+          {dataLoadError && (
+            <p className="mb-4 text-center text-destructive font-medium">{dataLoadError}</p>
           )}
-          {isCountriesLoading ? (
+          {isInitialLoading ? (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <Skeleton className="h-10 w-full" />
@@ -181,9 +209,9 @@ export default function Home() {
                  <Skeleton className="h-10 w-full" />
                </div>
                <Skeleton className="h-10 w-full" />
-               <p className="text-center text-muted-foreground">Loading country data from World Bank...</p>
+               <p className="text-center text-muted-foreground">Loading initial data from World Bank...</p>
             </div>
-          ) : (
+          ) : formSchema && ( // Only render form when schema is ready
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -195,8 +223,8 @@ export default function Home() {
                       <FormLabel>From Country</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        disabled={isCountriesLoading || countryOptions.length === 0} // Disable if loading or empty
+                        value={field.value} // Use value for controlled component
+                        disabled={countryOptions.length === 0}
                        >
                         <FormControl>
                            <SelectTrigger className="w-full">
@@ -206,10 +234,10 @@ export default function Home() {
                         <SelectContent>
                           {countryOptions.map((country) => (
                             <SelectItem key={country.code} value={country.code}>
-                              {/* Optional: Add flag later {country.flag} */} {country.name} ({country.code})
+                              {country.name} ({country.code})
                             </SelectItem>
                           ))}
-                           {countryOptions.length === 0 && !isCountriesLoading && (
+                           {countryOptions.length === 0 && (
                               <SelectItem value="loading" disabled>No countries loaded</SelectItem>
                            )}
                         </SelectContent>
@@ -226,8 +254,8 @@ export default function Home() {
                       <FormLabel>To Country</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        disabled={isCountriesLoading || countryOptions.length === 0} // Disable if loading or empty
+                        value={field.value} // Use value for controlled component
+                        disabled={countryOptions.length === 0}
                         >
                          <FormControl>
                            <SelectTrigger className="w-full">
@@ -237,10 +265,10 @@ export default function Home() {
                         <SelectContent>
                           {countryOptions.map((country) => (
                             <SelectItem key={country.code} value={country.code}>
-                               {/* Optional: Add flag later {country.flag} */} {country.name} ({country.code})
+                               {country.name} ({country.code})
                             </SelectItem>
                           ))}
-                           {countryOptions.length === 0 && !isCountriesLoading && (
+                           {countryOptions.length === 0 && (
                               <SelectItem value="loading" disabled>No countries loaded</SelectItem>
                            )}
                         </SelectContent>
@@ -258,7 +286,16 @@ export default function Home() {
                       <FormItem>
                         <FormLabel>Amount</FormLabel>
                         <FormControl>
-                          <Input type="number" placeholder="Enter amount" {...field} step="any" className="bg-secondary focus:bg-background" />
+                           {/* Ensure value is handled correctly for number input */}
+                          <Input
+                             type="number"
+                             placeholder="Enter amount"
+                             step="any"
+                             className="bg-secondary focus:bg-background"
+                             {...field}
+                             value={field.value ?? ''} // Handle potential undefined/null
+                             onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+                             />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -271,18 +308,29 @@ export default function Home() {
                       <FormItem>
                         <FormLabel>Year</FormLabel>
                         <FormControl>
-                          <Input type="number" placeholder="Enter year (e.g., 2022)" {...field} min="1960" max={new Date().getFullYear()} className="bg-secondary focus:bg-background" />
+                           {/* Ensure value is handled correctly for number input */}
+                           <Input
+                             type="number"
+                             placeholder={`e.g., ${latestYear || new Date().getFullYear()}`}
+                             min="1960"
+                             max={latestYear ?? new Date().getFullYear()} // Use dynamic max year
+                             className="bg-secondary focus:bg-background"
+                             {...field}
+                             value={field.value ?? ''} // Handle potential undefined/null
+                             onChange={e => field.onChange(e.target.value === '' ? undefined : parseInt(e.target.value, 10))}
+                             />
                         </FormControl>
                          <FormMessage />
-                         {/* Optional: Add description for data availability */}
-                         {/* <FormDescription>PPP data availability varies by year.</FormDescription> */}
+                         <p className="text-xs text-muted-foreground pt-1">
+                            Latest available data: {latestYear ? latestYear : 'Loading...'}
+                         </p>
                       </FormItem>
                     )}
                  />
               </div>
 
 
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading || isCountriesLoading || countryOptions.length === 0}>
+              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading || isInitialLoading || countryOptions.length === 0}>
                 {isLoading ? 'Calculating...' : 'Calculate PPP'}
               </Button>
             </form>
@@ -296,7 +344,7 @@ export default function Home() {
           {result && !isLoading && (
             <div className="mt-8 p-6 bg-accent/10 rounded-lg text-center border border-accent">
               <p className="text-lg text-foreground">
-                <span className="font-semibold">{result.currency1?.currencySymbol || ''}{form.getValues('amount').toLocaleString()}</span> in {result.country1Name} ({form.getValues('year')})
+                <span className="font-semibold">{result.currency1?.currencySymbol || ''}{form.getValues('amount').toLocaleString()}</span> in {result.country1Name} ({result.year})
               </p>
               <p className="text-lg text-foreground mt-1">
                 has the same purchasing power as
@@ -305,7 +353,7 @@ export default function Home() {
                 {result.currency2?.currencySymbol || ''}{result.equivalentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-lg text-foreground mt-1">
-                in {result.country2Name} ({form.getValues('year')}).
+                in {result.country2Name} ({result.year}).
               </p>
                {(!result.currency1?.currencySymbol || !result.currency2?.currencySymbol) && (
                    <p className="text-sm text-muted-foreground mt-2">(Currency symbols might be missing for some selections)</p>
