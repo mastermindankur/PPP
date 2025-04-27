@@ -47,7 +47,7 @@ interface CalculationResult {
 export type HistoricalEquivalentDataPoint = {
   year: number;
   equivalentAmount: number; // Store the calculated equivalent amount for the chart
-  label: string; // Add a descriptive label for the tooltip
+  label: string; // Add a descriptive label for the tooltip (excluding the year)
 };
 
 
@@ -227,14 +227,14 @@ export default function Home() {
         if (ppp1 && ppp2 && ppp1 > 0 && ppp2 > 0) { // Ensure both values exist and are valid
           const pppRatio = ppp2 / ppp1;
           const equivalentAmount = baseAmount * pppRatio; // Calculate equivalent amount for this year
-          // Construct the descriptive label for the tooltip
+          // Construct the descriptive label for the tooltip (without the year)
           const baseAmountString = `${symbol1 || ''}${baseAmount.toLocaleString()}`;
-          const label = `Equivalent value of ${baseAmountString} (${name1}) in ${name2}`; // Add the label for tooltip
+          const label = `Equivalent value of ${baseAmountString} (${name1}) in ${name2}`; // Tooltip base label
 
           combinedData.push({
             year: year,
             equivalentAmount: equivalentAmount, // Store equivalent amount
-            label: label // Store the descriptive label
+            label: label // Store the descriptive label (without year)
           });
         }
       });
@@ -475,3 +475,5 @@ export default function Home() {
     </main>
   );
 }
+
+    

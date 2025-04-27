@@ -123,9 +123,16 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
                      const descriptiveLabel = pointData?.label || 'Equivalent Amount';
                      // Format the currency value
                      const formattedValue = formatCurrency(Number(value));
+                     // Get the year from the point data
+                     const year = pointData?.year;
+                     // Construct the final string including "in the year xx"
+                     const displayString = year
+                        ? `${descriptiveLabel}: ${formattedValue} in the year ${year}`
+                        : `${descriptiveLabel}: ${formattedValue}`; // Fallback if year is missing
+
                      // Return array: [display string, label (optional, null here)]
                      // The Year is already shown by labelFormatter, so we just show the description and value.
-                     return [`${descriptiveLabel}: ${formattedValue}`, null];
+                     return [displayString, null];
                   }}
                    labelClassName="font-bold text-foreground" // Make year bold
                    className="shadow-lg rounded-lg border border-border bg-background/95 backdrop-blur-sm p-3" // Enhanced tooltip style
@@ -150,3 +157,5 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
   )
 }
 
+
+    
