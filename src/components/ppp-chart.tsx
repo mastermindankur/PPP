@@ -12,7 +12,7 @@ import {
   ChartLegend,
   ChartLegendContent,
 } from "@/components/ui/chart"
-import type { HistoricalEquivalentDataPoint } from '@/app/page'; // Updated type import
+import type { HistoricalEquivalentDataPoint } from '@/app/page'; // Use the correct type
 
 interface PPPChartProps {
   data: HistoricalEquivalentDataPoint[];
@@ -22,24 +22,24 @@ interface PPPChartProps {
 // Updated chart config for equivalent amount
 const chartConfig = {
   equivalentAmount: {
-    label: "Equivalent Amount", // Updated label
-    color: "hsl(var(--chart-1))",
+    label: "Equivalent Amount", // Updated label for legend/tooltip reference
+    color: "hsl(var(--accent))", // Use accent color for the line
   },
 } satisfies ChartConfig
 
 export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
    // Determine a sensible domain for the Y-axis based on equivalent amounts
    const amounts = data.map(d => d.equivalentAmount);
-   const minAmount = Math.min(...amounts);
-   const maxAmount = Math.max(...amounts);
-   // Add some padding to the domain
-   const yDomainPadding = Math.max(1, (maxAmount - minAmount) * 0.1); // Ensure at least 1 unit padding
+   const minAmount = amounts.length > 0 ? Math.min(...amounts) : 0;
+   const maxAmount = amounts.length > 0 ? Math.max(...amounts) : 100; // Default max if no data
+   // Add some padding to the domain, ensure it's reasonable
+   const yDomainPadding = Math.max(1, Math.abs(maxAmount - minAmount) * 0.1);
    const yDomain: [number, number] = [
       Math.max(0, minAmount - yDomainPadding), // Don't go below 0
       maxAmount + yDomainPadding
    ];
 
-   // Formatter for the Y-axis and Tooltip
+   // Formatter for the Y-axis and Tooltip to show currency
    const formatCurrency = (value: number) => {
      return `${currencySymbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
    };
@@ -51,43 +51,53 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
           data={data}
           margin={{
             top: 5,
-            right: 30, // Increased right margin for currency labels
-            left: 20, // Increased left margin for currency labels
+            right: 35, // Increased right margin for currency labels if needed
+            left: 25, // Increased left margin for currency labels
             bottom: 5,
           }}
           accessibilityLayer // Add accessibility layer
         >
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis
-            dataKey="year"
+            dataKey="year" // X-axis represents the year
+            type="number" // Treat year as a number
+            domain={['dataMin', 'dataMax']} // Use data min/max for domain
             tickLine={false}
             axisLine={false}
             tickMargin={8}
             padding={{ left: 10, right: 10 }}
             aria-label="Year"
-            interval="preserveStartEnd"
+            tickFormatter={(value) => value.toString()} // Ensure year is displayed as string
+             // Adjust interval if needed for clarity, e.g., 0 for all ticks, 'preserveStartEnd'
+            // interval="preserveStartEnd"
           />
           <YAxis
+             // Y-axis implicitly uses the 'equivalentAmount' from the Line component
              tickLine={false}
              axisLine={false}
              tickMargin={8}
              tickFormatter={formatCurrency} // Use currency formatter
-             domain={yDomain} // Set dynamic domain
-             aria-label="Equivalent Purchasing Power Amount" // Updated aria-label
+             domain={yDomain} // Set dynamic domain based on calculated amounts
+             aria-label="Equivalent Purchasing Power Amount" // Correct label for Y-axis
              padding={{ top: 10, bottom: 10 }}
-             allowDataOverflow={false}
-             width={80} // Allocate more width for currency labels
+             allowDataOverflow={false} // Prevent ticks outside the calculated domain
+             width={85} // Allocate more width for potentially longer currency labels
           />
           <ChartTooltip
             cursor={false}
             content={
                <ChartTooltipContent
                   indicator="line"
-                  labelFormatter={(label) => `Year: ${label}`}
+                  labelFormatter={(label) => `Year: ${label}`} // Show year in tooltip title
                   formatter={(value, name, props) => {
+                     // value is the equivalentAmount, name is 'equivalentAmount' key
+                     // props.payload contains the full data point { year, equivalentAmount, label }
                      const pointData = props.payload as HistoricalEquivalentDataPoint | undefined;
-                     const label = pointData?.label || 'Equivalent Amount';
-                     return [`${label}: ${formatCurrency(Number(value))}`, null]; // Format value as currency
+                     const descriptiveLabel = pointData?.label || 'Equivalent Amount'; // Use the label from data if available
+                     // Format the currency value
+                     const formattedValue = formatCurrency(Number(value));
+                     // Return array: [display string, label (optional, null here)]
+                     return [`${descriptiveLabel}: ${formattedValue}`, null];
                   }}
                    labelClassName="font-semibold"
                    className="shadow-lg rounded-md bg-background/90 backdrop-blur-sm"
@@ -96,13 +106,13 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
           />
            <ChartLegend content={<ChartLegendContent />} />
           <Line
-            dataKey="equivalentAmount" // Use the new data key
+            dataKey="equivalentAmount" // Y-axis value comes from this key in the data
             type="monotone"
             stroke="var(--color-equivalentAmount)" // Use color from config
             strokeWidth={2}
             dot={false}
-            name="Equivalent Amount" // Updated name for Legend/Tooltip
-            aria-label={(payload) => payload ? `Equivalent amount in year ${payload.year} was ${formatCurrency(payload.equivalentAmount)}` : 'Equivalent amount trend'}
+            name={chartConfig.equivalentAmount.label} // Use label from config for Legend
+            aria-label={(payload) => payload ? `Equivalent amount in year ${payload.year} was ${formatCurrency(payload.equivalentAmount)}` : 'Equivalent amount trend over time'}
           />
         </LineChart>
       </ResponsiveContainer>

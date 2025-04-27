@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import type React from 'react';
@@ -183,7 +184,7 @@ export default function Home() {
       const pppRatio = pppData2.pppConversionFactor / pppData1.pppConversionFactor;
       const equivalentAmount = values.amount * pppRatio;
 
-      setResult({
+      const resultData = {
         equivalentAmount,
         currency1: currencyData1,
         currency2: currencyData2,
@@ -191,10 +192,11 @@ export default function Home() {
         country2Name: country2Info.name,
         year: values.year, // Include year in the result
         baseAmount: values.amount, // Include base amount
-      });
+      };
+      setResult(resultData);
 
-      // After successful calculation, fetch historical data, passing the base amount
-      fetchHistorical(values.country1, values.country2, country1Info.name, country2Info.name, values.amount);
+      // After successful calculation, fetch historical data, passing the base amount and names
+      fetchHistorical(values.country1, values.country2, country1Info.name, country2Info.name, values.amount, currencyData1?.currencySymbol, currencyData2?.currencySymbol);
 
 
     } catch (err) {
@@ -206,7 +208,7 @@ export default function Home() {
   }
 
   // Function to fetch and process historical data for equivalent amount chart
-  const fetchHistorical = async (code1: string, code2: string, name1: string, name2: string, baseAmount: number) => {
+  const fetchHistorical = async (code1: string, code2: string, name1: string, name2: string, baseAmount: number, symbol1?: string, symbol2?: string) => {
     setIsFetchingHistoricalData(true);
     setHistoricalData(null); // Clear previous chart data
     try {
@@ -225,10 +227,13 @@ export default function Home() {
         if (ppp1 && ppp2 && ppp1 > 0 && ppp2 > 0) { // Ensure both values exist and are valid
           const pppRatio = ppp2 / ppp1;
           const equivalentAmount = baseAmount * pppRatio; // Calculate equivalent amount for this year
+          // Construct the descriptive label for the tooltip
+          const baseAmountString = `${symbol1 || ''}${baseAmount.toLocaleString()}`;
+          const label = `Equivalent value of ${baseAmountString} (${name1}) in ${name2}`;
           combinedData.push({
             year: year,
             equivalentAmount: equivalentAmount, // Store equivalent amount
-            label: `Equivalent value of ${baseAmount.toLocaleString()} (${name1}) in ${name2}` // Updated label
+            label: label // Add the descriptive label
           });
         }
       });
@@ -366,6 +371,7 @@ export default function Home() {
                              type="number"
                              placeholder="Enter amount"
                              step="any"
+                             min="0.01" // Ensure a positive amount can be entered
                              className="bg-secondary focus:bg-background"
                              {...field}
                              value={field.value ?? ''} // Handle potential undefined/null
@@ -389,6 +395,7 @@ export default function Home() {
                              placeholder={`e.g., ${latestYear || new Date().getFullYear()}`}
                              min="1990" // Adjusted min year
                              max={latestYear ?? new Date().getFullYear()} // Use dynamic max year
+                             step="1" // Only allow whole numbers for year
                              className="bg-secondary focus:bg-background"
                              {...field}
                              value={field.value ?? ''} // Handle potential undefined/null
@@ -448,12 +455,13 @@ export default function Home() {
                ) : historicalData && historicalData.length > 0 ? (
                   <PPPChart
                      data={historicalData}
-                     currencySymbol={result?.currency2?.currencySymbol || ''} // Pass currency symbol
+                     currencySymbol={result?.currency2?.currencySymbol || ''} // Pass currency symbol of the second country
                   />
                ) : historicalData && historicalData.length === 0 ? (
                  <p className="text-center text-muted-foreground p-4 border rounded-md">No common historical data found for the selected countries.</p>
                ) : !isFetchingHistoricalData && !historicalData ? (
-                  <p className="text-center text-muted-foreground p-4 border rounded-md">Historical data will appear here after calculation.</p>
+                  // Initial state before historical data is fetched or if fetching failed
+                  <p className="text-center text-muted-foreground p-4 border rounded-md">Historical data comparison will appear here.</p>
                ) : null}
              </div>
            )}
@@ -461,7 +469,7 @@ export default function Home() {
         </CardContent>
       </Card>
        <footer className="mt-8 text-center text-sm text-muted-foreground px-4">
-         Data sourced from World Bank (Indicator: PA.NUS.PPP). Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data. Historical chart shows the equivalent value in Country 2 currency for the amount entered in Country 1 currency over time.
+         Data sourced from World Bank (Indicator: PA.NUS.PPP). Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data. The chart shows the historical equivalent value in {result?.country2Name || 'the second country'}'s currency for the amount entered in {result?.country1Name || 'the first country'}'s currency.
       </footer>
     </main>
   );
