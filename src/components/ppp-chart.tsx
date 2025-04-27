@@ -68,8 +68,10 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
             padding={{ left: 10, right: 10 }}
             aria-label="Year"
             tickFormatter={(value) => value.toString()} // Ensure year is displayed as string
-             // Adjust interval if needed for clarity, e.g., 0 for all ticks, 'preserveStartEnd'
-            // interval="preserveStartEnd"
+             // Show all ticks if space allows, otherwise let recharts decide. minTickGap prevents overlap.
+            interval={0}
+            minTickGap={5} // Minimum gap between ticks to prevent overlap
+            // Consider adding angle={-45} textAnchor="end" if labels still overlap horizontally
           />
           <YAxis
              // Y-axis implicitly uses the 'equivalentAmount' from the Line component
@@ -97,6 +99,7 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
                      // Format the currency value
                      const formattedValue = formatCurrency(Number(value));
                      // Return array: [display string, label (optional, null here)]
+                     // The Year is already shown by labelFormatter, so we just show the description and value.
                      return [`${descriptiveLabel}: ${formattedValue}`, null];
                   }}
                    labelClassName="font-semibold"
