@@ -62,11 +62,9 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
      return `${currencySymbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
    };
 
-    // Prepare ticks for X-axis to show all years
+    // Prepare ticks for X-axis to show all available years
     const yearTicks = data.map(d => d.year);
-    // Calculate a dynamic interval if there are too many years to fit horizontally
-    const maxTicksToShowHorizontally = 10; // Adjust as needed based on chart width
-    const tickInterval = yearTicks.length > maxTicksToShowHorizontally ? Math.ceil(yearTicks.length / maxTicksToShowHorizontally) : 0; // 0 means show all if possible
+    // Removed interval calculation as we are angling labels
 
   return (
     <ChartContainer config={chartConfig} className="min-h-[200px] w-full h-80"> {/* Increased height */}
@@ -97,7 +95,6 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
             textAnchor="end" // Anchor angled labels correctly
             height={50} // Allocate more height for angled labels
             interval={0} // Try to show every tick specified in `ticks` array
-             // minTickGap={5} // Removed minTickGap as we force ticks and use angle
           />
           <YAxis
              // Y-axis implicitly uses the 'equivalentAmount' from the Line component
@@ -122,8 +119,8 @@ export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
                      // value is the equivalentAmount, name is 'equivalentAmount' key
                      // props.payload contains the full data point { year, equivalentAmount, label }
                      const pointData = props.payload as HistoricalEquivalentDataPoint | undefined;
-                     // Ensure label exists and is a string, fallback otherwise
-                     const descriptiveLabel = typeof pointData?.label === 'string' && pointData.label ? pointData.label : `Equivalent Amount`;
+                     // Get the pre-formatted label from the data point
+                     const descriptiveLabel = pointData?.label || 'Equivalent Amount';
                      // Format the currency value
                      const formattedValue = formatCurrency(Number(value));
                      // Return array: [display string, label (optional, null here)]
