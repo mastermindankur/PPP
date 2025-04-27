@@ -39,11 +39,13 @@ interface CalculationResult {
   country1Name: string;
   country2Name: string;
   year: number; // Add year to result
+  baseAmount: number; // Add base amount to result
 }
 
-export type ChartDataPoint = {
+// Renamed from ChartDataPoint to reflect the new data structure
+export type HistoricalEquivalentDataPoint = {
   year: number;
-  ratio: number;
+  equivalentAmount: number; // Store the calculated equivalent amount for the chart
   label: string; // For tooltip/legend
 };
 
@@ -57,7 +59,7 @@ export default function Home() {
   const [countryOptions, setCountryOptions] = useState<CountryInfo[]>([]);
   const [latestYear, setLatestYear] = useState<number | null>(null);
   const [formSchema, setFormSchema] = useState<z.ZodSchema<any> | null>(null); // State for the dynamic schema
-  const [historicalData, setHistoricalData] = useState<ChartDataPoint[] | null>(null);
+  const [historicalData, setHistoricalData] = useState<HistoricalEquivalentDataPoint[] | null>(null); // Updated state type
   const [isFetchingHistoricalData, setIsFetchingHistoricalData] = useState(false);
 
 
@@ -188,10 +190,11 @@ export default function Home() {
         country1Name: country1Info.name,
         country2Name: country2Info.name,
         year: values.year, // Include year in the result
+        baseAmount: values.amount, // Include base amount
       });
 
-      // After successful calculation, fetch historical data
-      fetchHistorical(values.country1, values.country2, country1Info.name, country2Info.name);
+      // After successful calculation, fetch historical data, passing the base amount
+      fetchHistorical(values.country1, values.country2, country1Info.name, country2Info.name, values.amount);
 
 
     } catch (err) {
@@ -202,8 +205,8 @@ export default function Home() {
     }
   }
 
-  // Function to fetch and process historical data
-  const fetchHistorical = async (code1: string, code2: string, name1: string, name2: string) => {
+  // Function to fetch and process historical data for equivalent amount chart
+  const fetchHistorical = async (code1: string, code2: string, name1: string, name2: string, baseAmount: number) => {
     setIsFetchingHistoricalData(true);
     setHistoricalData(null); // Clear previous chart data
     try {
@@ -212,7 +215,7 @@ export default function Home() {
         getHistoricalPPPData(code2),
       ]);
 
-      const combinedData: ChartDataPoint[] = [];
+      const combinedData: HistoricalEquivalentDataPoint[] = []; // Use new type
       const years = new Set([...history1.map(d => d.year), ...history2.map(d => d.year)]);
 
       years.forEach(year => {
@@ -220,10 +223,12 @@ export default function Home() {
         const ppp2 = history2.find(d => d.year === year)?.pppConversionFactor;
 
         if (ppp1 && ppp2 && ppp1 > 0 && ppp2 > 0) { // Ensure both values exist and are valid
+          const pppRatio = ppp2 / ppp1;
+          const equivalentAmount = baseAmount * pppRatio; // Calculate equivalent amount for this year
           combinedData.push({
             year: year,
-            ratio: ppp2 / ppp1, // Ratio: How many units of country2 currency per unit of country1 currency
-            label: `${name1} vs ${name2} PPP Ratio`
+            equivalentAmount: equivalentAmount, // Store equivalent amount
+            label: `Equivalent value of ${baseAmount.toLocaleString()} (${name1}) in ${name2}` // Updated label
           });
         }
       });
@@ -354,7 +359,7 @@ export default function Home() {
                     name="amount"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Amount ({result?.currency1?.currencySymbol || '...'})</FormLabel>
+                        <FormLabel>Amount ({result?.currency1?.currencySymbol || countryOptions.find(c => c.code === form.getValues('country1'))?.currencySymbol || '...'})</FormLabel>
                         <FormControl>
                            {/* Ensure value is handled correctly for number input */}
                           <Input
@@ -414,7 +419,7 @@ export default function Home() {
           {result && !isLoading && (
             <div className="mt-8 p-6 bg-accent/10 rounded-lg text-center border border-accent">
                <p className="text-lg text-foreground">
-                 <span className="font-semibold">{result.currency1?.currencySymbol || ''}{form.getValues('amount').toLocaleString()}</span> in {result.country1Name} ({result.year})
+                 <span className="font-semibold">{result.currency1?.currencySymbol || ''}{result.baseAmount.toLocaleString()}</span> in {result.country1Name} ({result.year})
                </p>
                <p className="text-lg text-foreground mt-1">
                  has the same purchasing power as
@@ -434,14 +439,17 @@ export default function Home() {
            {/* Historical Data Chart */}
            {result && !isLoading && ( // Show chart area only after a successful calculation
              <div className="mt-8">
-               <h3 className="text-xl font-semibold text-center mb-4">Historical PPP Ratio Trend</h3>
+               <h3 className="text-xl font-semibold text-center mb-4">Historical Purchasing Power Equivalent</h3>
                {isFetchingHistoricalData ? (
                   <div className="flex justify-center items-center h-64">
                      <Skeleton className="h-full w-full" />
                      <p className="absolute text-muted-foreground">Loading historical data...</p>
                   </div>
                ) : historicalData && historicalData.length > 0 ? (
-                  <PPPChart data={historicalData} />
+                  <PPPChart
+                     data={historicalData}
+                     currencySymbol={result?.currency2?.currencySymbol || ''} // Pass currency symbol
+                  />
                ) : historicalData && historicalData.length === 0 ? (
                  <p className="text-center text-muted-foreground p-4 border rounded-md">No common historical data found for the selected countries.</p>
                ) : !isFetchingHistoricalData && !historicalData ? (
@@ -453,10 +461,8 @@ export default function Home() {
         </CardContent>
       </Card>
        <footer className="mt-8 text-center text-sm text-muted-foreground px-4">
-         Data sourced from World Bank (Indicator: PA.NUS.PPP). Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data. Historical chart shows the ratio of Country 2's PPP factor to Country 1's PPP factor.
+         Data sourced from World Bank (Indicator: PA.NUS.PPP). Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data. Historical chart shows the equivalent value in Country 2 currency for the amount entered in Country 1 currency over time.
       </footer>
     </main>
   );
 }
-
-    

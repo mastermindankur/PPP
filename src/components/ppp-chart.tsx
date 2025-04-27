@@ -12,30 +12,37 @@ import {
   ChartLegend,
   ChartLegendContent,
 } from "@/components/ui/chart"
-import type { ChartDataPoint } from '@/app/page'; // Assuming the type is exported from page.tsx
+import type { HistoricalEquivalentDataPoint } from '@/app/page'; // Updated type import
 
 interface PPPChartProps {
-  data: ChartDataPoint[];
+  data: HistoricalEquivalentDataPoint[];
+  currencySymbol?: string; // Add currency symbol prop
 }
 
+// Updated chart config for equivalent amount
 const chartConfig = {
-  ratio: {
-    label: "PPP Ratio",
+  equivalentAmount: {
+    label: "Equivalent Amount", // Updated label
     color: "hsl(var(--chart-1))",
   },
 } satisfies ChartConfig
 
-export default function PPPChart({ data }: PPPChartProps) {
-   // Determine a sensible domain for the Y-axis
-   const ratios = data.map(d => d.ratio);
-   const minRatio = Math.min(...ratios);
-   const maxRatio = Math.max(...ratios);
+export default function PPPChart({ data, currencySymbol = '' }: PPPChartProps) {
+   // Determine a sensible domain for the Y-axis based on equivalent amounts
+   const amounts = data.map(d => d.equivalentAmount);
+   const minAmount = Math.min(...amounts);
+   const maxAmount = Math.max(...amounts);
    // Add some padding to the domain
-   const yDomainPadding = Math.max(0.1, (maxRatio - minRatio) * 0.1); // Ensure at least 0.1 padding
+   const yDomainPadding = Math.max(1, (maxAmount - minAmount) * 0.1); // Ensure at least 1 unit padding
    const yDomain: [number, number] = [
-      Math.max(0, minRatio - yDomainPadding), // Don't go below 0
-      maxRatio + yDomainPadding
+      Math.max(0, minAmount - yDomainPadding), // Don't go below 0
+      maxAmount + yDomainPadding
    ];
+
+   // Formatter for the Y-axis and Tooltip
+   const formatCurrency = (value: number) => {
+     return `${currencySymbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+   };
 
   return (
     <ChartContainer config={chartConfig} className="min-h-[200px] w-full h-64">
@@ -44,8 +51,8 @@ export default function PPPChart({ data }: PPPChartProps) {
           data={data}
           margin={{
             top: 5,
-            right: 20, // Increased right margin for labels
-            left: 10, // Increased left margin for labels
+            right: 30, // Increased right margin for currency labels
+            left: 20, // Increased left margin for currency labels
             bottom: 5,
           }}
           accessibilityLayer // Add accessibility layer
@@ -56,52 +63,49 @@ export default function PPPChart({ data }: PPPChartProps) {
             tickLine={false}
             axisLine={false}
             tickMargin={8}
-            // tickFormatter={(value) => value.toString()} // Keep years as numbers
-            padding={{ left: 10, right: 10 }} // Add padding to X-axis
+            padding={{ left: 10, right: 10 }}
             aria-label="Year"
-             interval="preserveStartEnd" // Show first and last tick
-              // Consider adding more ticks dynamically based on data range if needed
-            // ticks={data.map(d => d.year).filter((y, i, arr) => i % Math.max(1, Math.floor(arr.length / 5)) === 0)} // Example: show every ~5th year
+            interval="preserveStartEnd"
           />
           <YAxis
              tickLine={false}
              axisLine={false}
              tickMargin={8}
-             tickFormatter={(value) => value.toFixed(2)} // Format ratio to 2 decimal places
+             tickFormatter={formatCurrency} // Use currency formatter
              domain={yDomain} // Set dynamic domain
-             aria-label="PPP Ratio (Country 2 / Country 1)"
-             padding={{ top: 10, bottom: 10 }} // Add padding to Y-axis
-             allowDataOverflow={false} // Prevent line going outside plot area
+             aria-label="Equivalent Purchasing Power Amount" // Updated aria-label
+             padding={{ top: 10, bottom: 10 }}
+             allowDataOverflow={false}
+             width={80} // Allocate more width for currency labels
           />
           <ChartTooltip
-            cursor={false} // Disable default cursor line
+            cursor={false}
             content={
                <ChartTooltipContent
-                  indicator="line" // Use a line indicator
-                  labelFormatter={(label, payload) => `Year: ${label}`} // Show year in label
+                  indicator="line"
+                  labelFormatter={(label) => `Year: ${label}`}
                   formatter={(value, name, props) => {
-                     const label = props.payload?.label || 'Ratio'; // Get label from data or default
-                     return [`${label}: ${Number(value).toFixed(4)}`, null]; // Show detailed ratio
+                     const pointData = props.payload as HistoricalEquivalentDataPoint | undefined;
+                     const label = pointData?.label || 'Equivalent Amount';
+                     return [`${label}: ${formatCurrency(Number(value))}`, null]; // Format value as currency
                   }}
                    labelClassName="font-semibold"
-                   className="shadow-lg rounded-md bg-background/90 backdrop-blur-sm" // Style tooltip
+                   className="shadow-lg rounded-md bg-background/90 backdrop-blur-sm"
                />
              }
           />
            <ChartLegend content={<ChartLegendContent />} />
           <Line
-            dataKey="ratio"
+            dataKey="equivalentAmount" // Use the new data key
             type="monotone"
-            stroke="var(--color-ratio)"
+            stroke="var(--color-equivalentAmount)" // Use color from config
             strokeWidth={2}
-            dot={false} // Hide dots on the line for cleaner look
-            name="PPP Ratio" // Name for Legend/Tooltip
-            aria-label={(payload) => `PPP Ratio in year ${payload?.year} was ${payload?.ratio.toFixed(4)}`}
+            dot={false}
+            name="Equivalent Amount" // Updated name for Legend/Tooltip
+            aria-label={(payload) => payload ? `Equivalent amount in year ${payload.year} was ${formatCurrency(payload.equivalentAmount)}` : 'Equivalent amount trend'}
           />
         </LineChart>
       </ResponsiveContainer>
     </ChartContainer>
   )
 }
-
-    

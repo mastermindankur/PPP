@@ -2,6 +2,7 @@
 'use server';
 
 import * as XLSX from 'xlsx';
+import { getCurrencyData } from './currency-data'; // Import currency data service
 
 /**
  * Represents Purchasing Power Parity (PPP) data for a specific country and year.
@@ -23,11 +24,13 @@ export interface PPPData {
 }
 
 /**
- * Represents basic country information including name and code.
+ * Represents basic country information including name, code, and optional currency symbol.
  */
 export interface CountryInfo {
     name: string;
     code: string;
+    /** Optional: Currency symbol associated with the country */
+    currencySymbol?: string;
     // Optional: Add flag if available/needed later
     // flag?: string;
 }
@@ -85,7 +88,7 @@ async function fetchAndCachePPPData(): Promise<void> {
           // Prioritize 'Data', then check common patterns
           let sheetName = '';
           let sheet = null;
-          const potentialSheetNames = ['Data', 'Sheet1']; // Common names
+          const potentialSheetNames = ['Data', 'Sheet1', 'API_PA.NUS.PPP_DS2_en_excel_v2']; // Common names + specific name observed
 
           for (const name of potentialSheetNames) {
               if (workbook.SheetNames.includes(name)) {
@@ -118,12 +121,13 @@ async function fetchAndCachePPPData(): Promise<void> {
           const jsonData: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false }); // Ignore blank rows
 
            // Filter out potential metadata rows at the top if they exist (e.g., "Last Updated Date")
-          const dataStartIndexRaw = jsonData.findIndex(row => Array.isArray(row) && row[0] === 'Country Name');
+          const dataStartIndexRaw = jsonData.findIndex(row => Array.isArray(row) && String(row[0]).trim() === 'Country Name');
            if (dataStartIndexRaw === -1) {
+               console.error("Header row content:", jsonData.slice(0, 10).map(row => row.join(', '))); // Log first few rows for debugging
                throw new Error("Could not find header row starting with 'Country Name' in the sheet.");
            }
 
-          const headers = jsonData[dataStartIndexRaw];
+          const headers = jsonData[dataStartIndexRaw].map(h => String(h).trim()); // Trim headers
           const dataStartIndex = dataStartIndexRaw + 1;
 
           // Find column indices
@@ -131,11 +135,11 @@ async function fetchAndCachePPPData(): Promise<void> {
           const countryCodeIndex = headers.findIndex(h => h === 'Country Code');
           // Year columns: Find all columns that are 4-digit numbers starting from 1990
           const yearColumns = headers
-              .map((h, index) => ({ header: String(h).trim(), index }))
+              .map((h, index) => ({ header: h, index })) // Use trimmed header
               .filter(({ header }) => /^\d{4}$/.test(header) && parseInt(header, 10) >= 1990); // Filter years >= 1990
 
            if (countryNameIndex === -1 || countryCodeIndex === -1) {
-                throw new Error('Could not find required columns (Country Name, Country Code) in header row.');
+                throw new Error(`Could not find required columns (Country Name, Country Code) in header row. Found headers: ${headers.join(', ')}`);
            }
            if (yearColumns.length === 0) {
                console.warn('No year columns found from 1990 onwards in the header row. Historical data might be limited.');
@@ -143,13 +147,15 @@ async function fetchAndCachePPPData(): Promise<void> {
 
 
           const years = yearColumns.map(yc => parseInt(yc.header, 10));
-          const latestAvailableYear = Math.max(...years, 0); // Use 0 as default if no years found
+          const latestAvailableYear = Math.max(...years.filter(y => !isNaN(y)), 0); // Filter NaN just in case, Use 0 as default if no years found
           const yearIndicesMap = new Map(yearColumns.map(yc => [parseInt(yc.header, 10), yc.index]));
 
           const tempPppDataCache: { [year: number]: { [countryCode: string]: number } } = {};
           const tempHistoricalDataCache: { [countryCode: string]: HistoricalDataPoint[] } = {};
           const tempCountriesMap = new Map<string, CountryInfo>();
           const dataRows = jsonData.slice(dataStartIndex);
+          const currencyFetchPromises: Promise<void>[] = []; // For fetching currency symbols concurrently
+
 
           dataRows.forEach((row) => {
               if (!row || row.length <= Math.max(countryNameIndex, countryCodeIndex)) return;
@@ -161,8 +167,18 @@ async function fetchAndCachePPPData(): Promise<void> {
               if (countryName && countryCode && countryCode.length === 3) {
                   // Add to countries list (unique by code)
                   if (!tempCountriesMap.has(countryCode)) {
-                      tempCountriesMap.set(countryCode, { name: countryName, code: countryCode });
+                      const countryInfo: CountryInfo = { name: countryName, code: countryCode };
+                      tempCountriesMap.set(countryCode, countryInfo);
                       tempHistoricalDataCache[countryCode] = []; // Initialize historical array
+
+                      // Fetch currency symbol asynchronously and update the map entry
+                     currencyFetchPromises.push(
+                         getCurrencyData(countryCode).then(currency => {
+                             if (currency) {
+                                 countryInfo.currencySymbol = currency.currencySymbol;
+                             }
+                         })
+                     );
                   }
 
                   // Add PPP data to caches for all valid years >= 1990
@@ -191,6 +207,10 @@ async function fetchAndCachePPPData(): Promise<void> {
                    }
               }
           });
+
+          // Wait for all currency fetches to complete
+          await Promise.all(currencyFetchPromises);
+
 
           // Sort countries
           const uniqueCountries = Array.from(tempCountriesMap.values());
@@ -225,7 +245,7 @@ async function fetchAndCachePPPData(): Promise<void> {
 
 
 /**
- * Retrieves the list of countries from the cached data.
+ * Retrieves the list of countries (with currency symbols) from the cached data.
  * If the cache is empty, it triggers the data fetching process.
  *
  * @returns A promise that resolves to an array of CountryInfo objects. Returns empty array on failure.
@@ -249,11 +269,12 @@ export async function getCountries(): Promise<CountryInfo[]> {
  * @returns A promise that resolves to the latest available year (number) or null if data cannot be loaded or no data >= 1990 exists.
  */
 export async function getLatestAvailableYear(): Promise<number | null> {
-    if (cachedLatestYear === null && !isFetchingData) { // Check isFetchingData to avoid infinite loop on initial load error
+    // Ensure data is fetched if needed
+    if (cachedLatestYear === null && !pppDataCache) { // Check main data cache as proxy for fetch attempt
         try {
             await fetchAndCachePPPData();
         } catch (error) {
-            console.error("Failed to determine latest available year:", error);
+            console.error("Failed to determine latest available year due to fetch error:", error);
             return null; // Return null on failure
         }
     }
@@ -343,5 +364,3 @@ export async function getHistoricalPPPData(
 
     return countryHistory; // Returns the cached (and sorted) array
 }
-
-    
