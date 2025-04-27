@@ -1,0 +1,1 @@
+NOTE: Binary file content cannot be represented here. You need to manually download the file from https://api.worldbank.org/v2/en/indicator/PA.NUS.PPP?downloadformat=excel and place it in the `public/` directory of your project. Ensure the filename is exactly `ppp_data.xls`. 
