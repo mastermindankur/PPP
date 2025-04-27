@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import type React from 'react';
@@ -37,8 +38,8 @@ type FormData = z.infer<typeof formSchema>;
 
 interface CalculationResult {
   equivalentAmount: number;
-  currency1: CurrencyData;
-  currency2: CurrencyData;
+  currency1: CurrencyData | null; // Allow null if not found
+  currency2: CurrencyData | null; // Allow null if not found
   country1Name: string;
   country2Name: string;
 }
@@ -56,15 +57,18 @@ export default function Home() {
       setIsCountriesLoading(true);
       setCountriesError(null);
       try {
+        // getCountries now handles fetching and caching, and returns empty on error
         const fetchedCountries = await getCountries();
+        setCountryOptions(fetchedCountries);
         if (fetchedCountries.length === 0) {
-          setCountriesError("Could not load country list. Please ensure 'ppp_data.xls' is available.");
-        } else {
-          setCountryOptions(fetchedCountries);
+           // Keep a user-friendly error if the list is truly empty after fetch attempt
+           setCountriesError("Could not load country list. Please check your connection or try again later.");
+           console.warn("Country list is empty after fetching.");
         }
       } catch (err) {
+        // Catch potential re-thrown errors from fetchAndCachePPPData
         console.error("Failed to fetch countries:", err);
-        setCountriesError("Failed to load country list.");
+        setCountriesError("Failed to load country list. An error occurred.");
       } finally {
         setIsCountriesLoading(false);
       }
@@ -94,7 +98,15 @@ export default function Home() {
     }
 
     try {
+       // Ensure country options are loaded before proceeding
+      if (countryOptions.length === 0) {
+         setError("Country data is still loading or failed to load. Please wait or refresh.");
+         setIsLoading(false);
+         return;
+      }
+
       // Fetch PPP data using country *codes*
+      // getPPPData now uses the cache populated by getCountries
       const [pppData1, pppData2, currencyData1, currencyData2] = await Promise.all([
         getPPPData(values.country1, values.year),
         getPPPData(values.country2, values.year),
@@ -106,21 +118,23 @@ export default function Home() {
       const country1Info = countryOptions.find(c => c.code === values.country1);
       const country2Info = countryOptions.find(c => c.code === values.country2);
 
+       if (!country1Info || !country2Info) {
+         // This shouldn't happen if validation passes and countryOptions is populated
+         setError(`Could not find country information for the selected codes.`);
+         setIsLoading(false);
+         return;
+      }
+
+
       if (!pppData1 || !pppData2) {
-        setError(`PPP data not available for one or both selected countries/year combination (${values.year}). Please try a different year or ensure data exists.`);
+        setError(`PPP data not available for one or both selected countries/year combination (${values.country1}/${values.country2}, ${values.year}). Please try a different year or check data availability.`);
         setIsLoading(false);
         return;
       }
       // Basic currency data check - enhance getCurrencyData if needed
       if (!currencyData1 || !currencyData2) {
-         setError(`Currency data not available for one or both selected countries. Displaying result without symbols.`);
+         console.warn(`Currency data not available for ${values.country1} or ${values.country2}. Displaying result without symbols.`);
          // Allow calculation but log warning or handle default symbols
-         console.warn(`Missing currency data for ${values.country1} or ${values.country2}`);
-      }
-       if (!country1Info || !country2Info) {
-         setError(`Could not find country names for the selected codes.`);
-         setIsLoading(false);
-         return;
       }
 
 
@@ -129,16 +143,15 @@ export default function Home() {
 
       setResult({
         equivalentAmount,
-        // Use fetched currency data, provide defaults if missing
-        currency1: currencyData1 ?? { countryCode: values.country1, currencyName: '', currencySymbol: '' },
-        currency2: currencyData2 ?? { countryCode: values.country2, currencyName: '', currencySymbol: '' },
+        currency1: currencyData1, // Can be null
+        currency2: currencyData2, // Can be null
         country1Name: country1Info.name,
         country2Name: country2Info.name,
       });
 
     } catch (err) {
       console.error("Calculation error:", err);
-      setError("An error occurred during calculation. Please try again.");
+      setError("An error occurred during calculation. Please check console for details.");
     } finally {
       setIsLoading(false);
     }
@@ -154,7 +167,7 @@ export default function Home() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {countriesError && (
+          {countriesError && !isCountriesLoading && ( // Show error only if not loading
             <p className="mb-4 text-center text-destructive font-medium">{countriesError}</p>
           )}
           {isCountriesLoading ? (
@@ -168,6 +181,7 @@ export default function Home() {
                  <Skeleton className="h-10 w-full" />
                </div>
                <Skeleton className="h-10 w-full" />
+               <p className="text-center text-muted-foreground">Loading country data from World Bank...</p>
             </div>
           ) : (
           <Form {...form}>
@@ -179,7 +193,11 @@ export default function Home() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>From Country</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isCountriesLoading || !!countriesError}>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        disabled={isCountriesLoading || countryOptions.length === 0} // Disable if loading or empty
+                       >
                         <FormControl>
                            <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select first country" />
@@ -191,6 +209,9 @@ export default function Home() {
                               {/* Optional: Add flag later {country.flag} */} {country.name} ({country.code})
                             </SelectItem>
                           ))}
+                           {countryOptions.length === 0 && !isCountriesLoading && (
+                              <SelectItem value="loading" disabled>No countries loaded</SelectItem>
+                           )}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -203,7 +224,11 @@ export default function Home() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>To Country</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isCountriesLoading || !!countriesError}>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        disabled={isCountriesLoading || countryOptions.length === 0} // Disable if loading or empty
+                        >
                          <FormControl>
                            <SelectTrigger className="w-full">
                               <SelectValue placeholder="Select second country" />
@@ -215,6 +240,9 @@ export default function Home() {
                                {/* Optional: Add flag later {country.flag} */} {country.name} ({country.code})
                             </SelectItem>
                           ))}
+                           {countryOptions.length === 0 && !isCountriesLoading && (
+                              <SelectItem value="loading" disabled>No countries loaded</SelectItem>
+                           )}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -254,7 +282,7 @@ export default function Home() {
               </div>
 
 
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading || isCountriesLoading || !!countriesError}>
+              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading || isCountriesLoading || countryOptions.length === 0}>
                 {isLoading ? 'Calculating...' : 'Calculate PPP'}
               </Button>
             </form>
@@ -287,7 +315,7 @@ export default function Home() {
         </CardContent>
       </Card>
        <footer className="mt-8 text-center text-sm text-muted-foreground px-4">
-         Data sourced from World Bank (Indicator: PA.NUS.PPP). Currency symbols are illustrative. PPP values may not be available for all country/year combinations in the demonstration data. For official use, consult the original World Bank data.
+         Data sourced from World Bank (Indicator: PA.NUS.PPP). Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data.
       </footer>
     </main>
   );
