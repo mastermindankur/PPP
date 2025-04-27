@@ -1,4 +1,5 @@
 
+
 import * as XLSX from 'xlsx';
 
 /**
@@ -61,8 +62,8 @@ const pppDatabase: { [year: number]: { [countryCode: string]: number } } = {
 
 
 /**
- * Reads the ppp_data.xls file, extracts country names and codes from the 'Data' sheet,
- * and returns a unique, sorted list of country information objects.
+ * Reads the ppp_data.xls file, dynamically identifies the data sheet, extracts country names
+ * and codes, and returns a unique, sorted list of country information objects.
  *
  * Assumes 'Country Name' is the first column and 'Country Code' is the second column
  * in the data rows (starting from the 5th row usually).
@@ -71,30 +72,61 @@ const pppDatabase: { [year: number]: { [countryCode: string]: number } } = {
  */
 export async function getCountries(): Promise<CountryInfo[]> {
   try {
-    const response = await fetch('/ppp_data.xls'); // Fetch from public folder
+    // Attempt to fetch the file from the public directory first.
+    // If you intend to download directly from World Bank on the client-side,
+    // be mindful of CORS issues. Fetching from `/public` is more reliable
+    // if the file is placed there during build or setup.
+    const response = await fetch('/ppp_data.xls');
     if (!response.ok) {
-        throw new Error(`Failed to fetch ppp_data.xls: ${response.statusText}`);
+        // Consider adding a fallback or clearer error message here
+        // e.g., if the file doesn't exist in /public
+        throw new Error(`Failed to fetch ppp_data.xls (Status: ${response.status}). Ensure the file exists in the /public directory.`);
     }
     const arrayBuffer = await response.arrayBuffer();
     const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
-    const sheetName = 'Data'; // Standard sheet name in World Bank downloads
-    const sheet = workbook.Sheets[sheetName];
+
+    // Dynamically find the data sheet name
+    let sheetName = 'Data'; // Default guess
+    let sheet;
+
+    if (workbook.SheetNames.includes(sheetName)) {
+        sheet = workbook.Sheets[sheetName];
+    } else if (workbook.SheetNames.length > 1) {
+        // Fallback: Assume the second sheet is the data sheet if 'Data' isn't found
+        sheetName = workbook.SheetNames[1];
+        sheet = workbook.Sheets[sheetName];
+        console.warn(`Sheet 'Data' not found. Using the second sheet found: '${sheetName}'.`);
+    } else if (workbook.SheetNames.length === 1) {
+        // Fallback: Use the first sheet if only one exists
+        sheetName = workbook.SheetNames[0];
+        sheet = workbook.Sheets[sheetName];
+         console.warn(`Sheet 'Data' not found and only one sheet exists. Using the first sheet found: '${sheetName}'.`);
+    }
+
 
     if (!sheet) {
-      console.error(`Sheet '${sheetName}' not found in ppp_data.xls`);
-      return [];
+      // If still no sheet is found after fallbacks
+      console.error(`Could not find a suitable data sheet in ppp_data.xls. Sheet names found: ${workbook.SheetNames.join(', ')}`);
+      return []; // Return empty array or throw a more specific error
     }
 
     // Convert sheet to JSON, assuming headers are in row 4 (index 3) and data starts row 5 (index 4)
     // header: 1 creates an array of arrays.
     const jsonData: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    // Data usually starts around row 5 (index 4)
-    const dataRows = jsonData.slice(4);
+    // Data usually starts around row 5 (index 4) in World Bank files.
+    // Find the actual start row by looking for 'Country Name' or 'Country Code' if necessary
+    let dataStartIndex = 4; // Default assumption
+    // Optional: Add logic here to find header row more robustly if needed
+
+    const dataRows = jsonData.slice(dataStartIndex);
 
     const countriesMap = new Map<string, CountryInfo>();
 
     dataRows.forEach((row) => {
+      // Gracefully handle rows that might not have enough columns
+      if (!row || row.length < 2) return;
+
       const countryName = row[0]; // Assuming Country Name is in the first column (index 0)
       const countryCode = row[1]; // Assuming Country Code is in the second column (index 1)
 
@@ -114,6 +146,10 @@ export async function getCountries(): Promise<CountryInfo[]> {
     uniqueCountries.sort((a, b) => a.name.localeCompare(b.name));
 
     // console.log("Fetched Countries:", uniqueCountries.slice(0, 10)); // Log first 10 for verification
+
+     if (uniqueCountries.length === 0) {
+       console.warn("No valid country data extracted from the sheet. Check sheet format and data starting row.");
+     }
 
     return uniqueCountries;
   } catch (error) {
@@ -140,17 +176,20 @@ export async function getPPPData(
   // await new Promise(resolve => setTimeout(resolve, 100));
 
   // --- Using Hardcoded Data ---
+  // TODO: Replace this with dynamic data loading from the XLS/CSV file for production use.
+  // The hardcoded data below is just for initial UI testing.
   const yearData = pppDatabase[year];
   if (!yearData) {
-    console.warn(`PPP data not found for year: ${year} in hardcoded source.`);
-    return null; // No data for the requested year
+    console.warn(`PPP data not found for year: ${year} in the hardcoded demonstration source.`);
+    // TODO: Implement fallback to read from XLS/CSV here if needed
+    return null; // No data for the requested year in hardcoded source
   }
 
   const pppFactor = yearData[countryCode];
   if (pppFactor === undefined) {
-     console.warn(`PPP data not found for country code ${countryCode} in year ${year} in hardcoded source.`);
-     // TODO: Implement fallback to read from XLS/CSV if needed
-    return null; // No data for the requested country in that year
+     console.warn(`PPP data not found for country code ${countryCode} in year ${year} in the hardcoded demonstration source.`);
+     // TODO: Implement fallback to read from XLS/CSV here if needed
+    return null; // No data for the requested country in that year in hardcoded source
   }
 
   return {
@@ -161,15 +200,62 @@ export async function getPPPData(
   // --- End Using Hardcoded Data ---
 
   /*
-  // --- Alternative: Reading from XLS/CSV on demand (Less efficient) ---
+  // --- Alternative: Reading from XLS/CSV on demand (Less efficient but dynamic) ---
   try {
-    // Fetch and parse the Excel file (similar logic to getCountries)
-    // Find the row matching countryCode
-    // Find the column matching the year (requires parsing header row)
-    // Extract the value
-    // Return PPPData or null
+    const response = await fetch('/ppp_data.xls');
+    if (!response.ok) throw new Error(`Failed to fetch ppp_data.xls: ${response.statusText}`);
+    const arrayBuffer = await response.arrayBuffer();
+    const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+
+    // Dynamically find the data sheet (similar logic to getCountries)
+    let sheetName = 'Data';
+    let sheet = workbook.Sheets[sheetName];
+    if (!sheet && workbook.SheetNames.length > 1) {
+        sheetName = workbook.SheetNames[1];
+        sheet = workbook.Sheets[sheetName];
+    } else if (!sheet && workbook.SheetNames.length === 1) {
+       sheetName = workbook.SheetNames[0];
+       sheet = workbook.Sheets[sheetName];
+    }
+     if (!sheet) throw new Error('Suitable data sheet not found.');
+
+    // Convert sheet to JSON, find header row, find year column, find country row
+    const jsonData: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    // Find the header row (usually row 4, index 3)
+    const headerRowIndex = 3; // Adjust if needed
+    const headers = jsonData[headerRowIndex];
+    const yearColumnIndex = headers.findIndex(header => String(header).trim() === String(year).trim());
+
+    if (yearColumnIndex === -1) {
+        console.warn(`Year ${year} column not found in the sheet.`);
+        return null;
+    }
+
+    // Find the row for the country code (usually starts row 5, index 4)
+    const countryRow = jsonData.slice(4).find(row => row && row[1] === countryCode); // Assuming code is column 1
+
+    if (!countryRow || countryRow.length <= yearColumnIndex) {
+        console.warn(`Data row not found for country code ${countryCode}.`);
+        return null;
+    }
+
+    const pppValue = countryRow[yearColumnIndex];
+
+    // Validate the PPP value
+    if (typeof pppValue !== 'number' || isNaN(pppValue)) {
+       console.warn(`Invalid or missing PPP value found for ${countryCode}, ${year}. Value: ${pppValue}`);
+       return null;
+    }
+
+    return {
+        countryCode,
+        pppConversionFactor: pppValue,
+        year,
+    };
+
   } catch (error) {
-    console.error(`Error fetching PPP data for ${countryCode}, ${year}:`, error);
+    console.error(`Error fetching/parsing PPP data for ${countryCode}, ${year}:`, error);
     return null;
   }
   */
