@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import type React from 'react';
@@ -13,7 +14,7 @@ import { Input } from "@/components/ui/input";
 // import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData } from '@/services/ppp-data';
+import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData, getDataLastUpdatedTimestamp } from '@/services/ppp-data'; // Added getDataLastUpdatedTimestamp
 import { getCurrencyData } from '@/services/currency-data';
 import type { PPPData, CountryInfo, HistoricalDataPoint } from '@/services/ppp-data';
 import type { CurrencyData } from '@/services/currency-data';
@@ -64,21 +65,24 @@ export default function Home() {
   const [formSchema, setFormSchema] = useState<z.ZodSchema<any> | null>(null);
   const [historicalData, setHistoricalData] = useState<HistoricalEquivalentDataPoint[] | null>(null);
   const [isFetchingHistoricalData, setIsFetchingHistoricalData] = useState(false);
+  const [dataTimestamp, setDataTimestamp] = useState<string | null>(null); // State for timestamp
 
 
-  // UseEffect to fetch initial data (countries and latest year)
+  // UseEffect to fetch initial data (countries, latest year, and timestamp)
   useEffect(() => {
     async function fetchInitialData() {
       setIsInitialLoading(true);
       setDataLoadError(null);
       try {
-        const [fetchedCountries, fetchedLatestYear] = await Promise.all([
+        const [fetchedCountries, fetchedLatestYear, fetchedTimestamp] = await Promise.all([
           getCountries(),
-          getLatestAvailableYear()
+          getLatestAvailableYear(),
+          getDataLastUpdatedTimestamp() // Fetch timestamp
         ]);
 
         setCountryOptions(fetchedCountries);
         setLatestYear(fetchedLatestYear);
+        setDataTimestamp(fetchedTimestamp); // Set timestamp state
 
         if (fetchedCountries.length === 0) {
           setDataLoadError("Could not load country list. Please check your connection or try again later.");
@@ -153,13 +157,7 @@ export default function Home() {
          return;
       }
 
-      const [pppData1, pppData2, currencyData1, currencyData2] = await Promise.all([
-        getPPPData(values.country1, values.year),
-        getPPPData(values.country2, values.year),
-        getCurrencyData(values.country1),
-        getCurrencyData(values.country2),
-      ]);
-
+      // Get country info directly from the fetched options (which came from the Excel)
       const country1Info = countryOptions.find(c => c.code === values.country1);
       const country2Info = countryOptions.find(c => c.code === values.country2);
 
@@ -169,14 +167,27 @@ export default function Home() {
          return;
       }
 
+      // Fetch PPP data and currency data (currency is still separate for symbols etc.)
+      const [pppData1, pppData2, currencyData1, currencyData2] = await Promise.all([
+        getPPPData(values.country1, values.year),
+        getPPPData(values.country2, values.year),
+        getCurrencyData(values.country1), // Currency data might still be useful for symbols
+        getCurrencyData(values.country2),
+      ]);
+
       if (!pppData1 || !pppData2) {
         setError(`PPP data not available for one or both selected countries/year combination (${country1Info.name}/${country2Info.name}, ${values.year}). Please try a different year or check data availability.`);
         setIsLoading(false);
         return;
       }
 
+      // Use names from the CountryInfo objects obtained from the Excel data
+      const country1Name = country1Info.name;
+      const country2Name = country2Info.name;
+
+
       if (!currencyData1 || !currencyData2) {
-         console.warn(`Currency data not available for ${country1Info.name} or ${country2Info.name}. Displaying result without symbols.`);
+         console.warn(`Currency data not available for ${country1Name} or ${country2Name}. Displaying result without symbols.`);
       }
 
       const pppRatio = pppData2.pppConversionFactor / pppData1.pppConversionFactor;
@@ -184,17 +195,18 @@ export default function Home() {
 
       const resultData = {
         equivalentAmount,
-        currency1: currencyData1,
-        currency2: currencyData2,
-        country1Name: country1Info.name,
-        country2Name: country2Info.name,
+        currency1: currencyData1, // Keep for symbol
+        currency2: currencyData2, // Keep for symbol
+        country1Name: country1Name, // Use name from Excel
+        country2Name: country2Name, // Use name from Excel
         year: values.year,
         baseAmount: values.amount,
       };
       setResult(resultData);
 
       // Fetch historical data after successful calculation
-      fetchHistorical(values.country1, values.country2, country1Info.name, country2Info.name, values.amount, currencyData1?.currencySymbol, currencyData2?.currencySymbol);
+      // Pass the correct names sourced from the Excel file
+      fetchHistorical(values.country1, values.country2, country1Name, country2Name, values.amount, currencyData1?.currencySymbol, currencyData2?.currencySymbol);
 
     } catch (err) {
       console.error("Calculation error:", err);
@@ -225,7 +237,7 @@ export default function Home() {
           const pppRatio = ppp2 / ppp1;
           const equivalentAmount = baseAmount * pppRatio;
           const baseAmountString = `${symbol1 || ''}${baseAmount.toLocaleString()}`;
-          const label = `Equivalent value of ${baseAmountString} (${name1}) in ${name2}`;
+          const label = `Equivalent value of ${baseAmountString} (${name1}) in ${name2}`; // Use correct names
 
           combinedData.push({
             year: year,
@@ -240,7 +252,7 @@ export default function Home() {
       if (combinedData.length > 0) {
         setHistoricalData(combinedData);
       } else {
-         console.warn(`No common historical PPP data found for ${name1} and ${name2}.`);
+         console.warn(`No common historical PPP data found for ${name1} and ${name2}.`); // Use correct names
       }
 
     } catch (error) {
@@ -304,7 +316,7 @@ export default function Home() {
                       <FormLabel>From Country</FormLabel>
                        <FormControl>
                          <CountryCombobox
-                           options={countryOptions}
+                           options={countryOptions} // Use options fetched from Excel
                            value={field.value}
                            onChange={(value) => {
                              field.onChange(value);
@@ -341,7 +353,7 @@ export default function Home() {
                       <FormLabel>To Country</FormLabel>
                        <FormControl>
                           <CountryCombobox
-                            options={countryOptions}
+                            options={countryOptions} // Use options fetched from Excel
                             value={field.value}
                             onChange={(value) => {
                                field.onChange(value);
@@ -366,7 +378,8 @@ export default function Home() {
                     name="amount"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Amount ({result?.currency1?.currencySymbol || countryOptions.find(c => c.code === form.getValues('country1'))?.currencySymbol || '...'})</FormLabel>
+                         {/* Dynamically update label with symbol if available */}
+                         <FormLabel>Amount ({form.watch('country1') ? (countryOptions.find(c => c.code === form.getValues('country1'))?.currencySymbol || '...') : '...'})</FormLabel>
                         <FormControl>
                           <Input
                              type="number"
@@ -425,12 +438,14 @@ export default function Home() {
           {result && !isLoading && (
             <div className="mt-8 p-6 bg-accent/10 rounded-lg text-center border border-accent">
                <p className="text-lg text-foreground">
+                  {/* Use symbol from currencyData if available, else empty */}
                  <span className="font-semibold">{result.currency1?.currencySymbol || ''}{result.baseAmount.toLocaleString()}</span> in {result.country1Name} ({result.year})
                </p>
                <p className="text-lg text-foreground mt-1">
                  has the same purchasing power as
                </p>
                <p className="text-3xl font-bold text-accent mt-2">
+                  {/* Use symbol from currencyData if available, else empty */}
                  {result.currency2?.currencySymbol || ''}{result.equivalentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                </p>
                <p className="text-lg text-foreground mt-1">
@@ -454,7 +469,7 @@ export default function Home() {
                ) : historicalData && historicalData.length > 0 ? (
                   <PPPChart
                      data={historicalData}
-                     currencySymbol={result?.currency2?.currencySymbol || ''}
+                     currencySymbol={result?.currency2?.currencySymbol || ''} // Pass symbol from currencyData
                   />
                ) : historicalData && historicalData.length === 0 ? (
                  <p className="text-center text-muted-foreground p-4 border rounded-md">No common historical data found for the selected countries.</p>
@@ -492,7 +507,10 @@ export default function Home() {
         </Accordion>
 
        <footer className="mt-8 mb-8 text-center text-sm text-muted-foreground px-4">
-         Data sourced from World Bank (Indicator: PA.NUS.PPP). Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data. The chart shows the historical equivalent value in {result?.country2Name || 'the second country'}'s currency for the amount entered in {result?.country1Name || 'the first country'}'s currency.
+         Data sourced from World Bank (Indicator: PA.NUS.PPP).{' '}
+         {/* Display data timestamp */}
+         {dataTimestamp ? `Data timestamp: ${dataTimestamp}. ` : ''}
+         Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data. The chart shows the historical equivalent value in {result?.country2Name || 'the second country'}'s currency for the amount entered in {result?.country1Name || 'the first country'}'s currency.
       </footer>
     </main>
   );

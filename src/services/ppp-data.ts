@@ -1,4 +1,5 @@
 
+
 'use server';
 
 import * as XLSX from 'xlsx';
@@ -50,6 +51,7 @@ let pppDataCache: { [year: number]: { [countryCode: string]: number } } | null =
 let historicalDataCache: { [countryCode: string]: HistoricalDataPoint[] } | null = null;
 let countriesCache: CountryInfo[] | null = null;
 let cachedLatestYear: number | null = null; // Cache for the latest year found
+let dataLastUpdatedTimestamp: string | null = null; // Cache for the data timestamp
 let isFetchingData = false; // Prevent concurrent fetches
 let fetchPromise: Promise<void> | null = null; // Store the fetch promise
 
@@ -62,7 +64,8 @@ const worldBankApiUrl = 'https://api.worldbank.org/v2/en/indicator/PA.NUS.PPP?do
  * @returns A promise that resolves when the cache is populated or rejects on error.
  */
 async function fetchAndCachePPPData(): Promise<void> {
-    if (pppDataCache && countriesCache && cachedLatestYear !== null && historicalDataCache) {
+    // Check if all necessary caches are populated
+    if (pppDataCache && countriesCache && cachedLatestYear !== null && historicalDataCache && dataLastUpdatedTimestamp !== null) {
         console.log("Data already cached.");
         return Promise.resolve(); // Already cached
     }
@@ -75,7 +78,11 @@ async function fetchAndCachePPPData(): Promise<void> {
     isFetchingData = true;
     console.log("Fetching PPP data from World Bank API...");
 
+    // Store the current time as a fallback timestamp
+    const fetchStartTime = new Date();
+
     fetchPromise = (async () => {
+      let localLastUpdatedTimestamp: string | null = null; // Timestamp found in the file
       try {
           const response = await fetch(worldBankApiUrl, { cache: 'force-cache' }); // Use caching
           if (!response.ok) {
@@ -120,6 +127,17 @@ async function fetchAndCachePPPData(): Promise<void> {
           // Convert sheet to JSON array of arrays
           const jsonData: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false }); // Ignore blank rows
 
+          // Attempt to find "Last Updated Date" in the first few rows (metadata area)
+          const metadataRows = jsonData.slice(0, 5); // Check first 5 rows
+          for (const row of metadataRows) {
+              if (Array.isArray(row) && typeof row[0] === 'string' && row[0].trim() === 'Last Updated Date' && row.length > 1) {
+                  localLastUpdatedTimestamp = String(row[1]).trim(); // Assuming date is in the second column
+                  console.log(`Found 'Last Updated Date' in Excel: ${localLastUpdatedTimestamp}`);
+                  break;
+              }
+          }
+
+
            // Filter out potential metadata rows at the top if they exist (e.g., "Last Updated Date")
           const dataStartIndexRaw = jsonData.findIndex(row => Array.isArray(row) && String(row[0]).trim() === 'Country Name');
            if (dataStartIndexRaw === -1) {
@@ -160,12 +178,12 @@ async function fetchAndCachePPPData(): Promise<void> {
           dataRows.forEach((row) => {
               if (!row || row.length <= Math.max(countryNameIndex, countryCodeIndex)) return;
 
-              const countryName = String(row[countryNameIndex]).trim();
-              const countryCode = String(row[countryCodeIndex]).trim();
+              const countryName = String(row[countryNameIndex]).trim(); // Extract name from Excel
+              const countryCode = String(row[countryCodeIndex]).trim(); // Extract code from Excel
 
-              // Basic validation
+              // Basic validation: Ensure name and 3-letter code exist
               if (countryName && countryCode && countryCode.length === 3) {
-                  // Add to countries list (unique by code)
+                  // Add to countries list (unique by code), using the name from the file
                   if (!tempCountriesMap.has(countryCode)) {
                       const countryInfo: CountryInfo = { name: countryName, code: countryCode };
                       tempCountriesMap.set(countryCode, countryInfo);
@@ -221,8 +239,11 @@ async function fetchAndCachePPPData(): Promise<void> {
           historicalDataCache = tempHistoricalDataCache;
           countriesCache = uniqueCountries;
           cachedLatestYear = latestAvailableYear > 0 ? latestAvailableYear : null; // Set to null if no valid years
+          // Use the timestamp found in the file, or fall back to the fetch start time
+          dataLastUpdatedTimestamp = localLastUpdatedTimestamp || `fetched ${fetchStartTime.toLocaleDateString()}`;
 
-          console.log(`Successfully fetched and cached data. ${uniqueCountries.length} countries found. Latest year with data >= 1990: ${cachedLatestYear}`);
+
+          console.log(`Successfully fetched and cached data. ${uniqueCountries.length} countries found. Latest year: ${cachedLatestYear}. Data timestamp: ${dataLastUpdatedTimestamp}`);
 
       } catch (error) {
           console.error('Error fetching or processing World Bank PPP data:', error);
@@ -231,6 +252,7 @@ async function fetchAndCachePPPData(): Promise<void> {
           historicalDataCache = null;
           countriesCache = null;
           cachedLatestYear = null;
+          dataLastUpdatedTimestamp = null; // Reset timestamp on error
           fetchPromise = null; // Reset promise on error
           throw error; // Re-throw to signal failure
       } finally {
@@ -246,6 +268,7 @@ async function fetchAndCachePPPData(): Promise<void> {
 
 /**
  * Retrieves the list of countries (with currency symbols) from the cached data.
+ * Country names and codes are sourced directly from the World Bank Excel file.
  * If the cache is empty, it triggers the data fetching process.
  *
  * @returns A promise that resolves to an array of CountryInfo objects. Returns empty array on failure.
@@ -279,6 +302,26 @@ export async function getLatestAvailableYear(): Promise<number | null> {
         }
     }
     return cachedLatestYear; // Return cached year or null if fetch failed/no data
+}
+
+/**
+ * Retrieves the timestamp indicating when the data was last updated or fetched.
+ * Tries to get the "Last Updated Date" from the Excel file first, otherwise uses the fetch time.
+ * If the cache is empty, it triggers the data fetching process.
+ *
+ * @returns A promise that resolves to the data timestamp string or null if data cannot be loaded.
+ */
+export async function getDataLastUpdatedTimestamp(): Promise<string | null> {
+     // Ensure data is fetched if needed
+     if (dataLastUpdatedTimestamp === null && !pppDataCache) { // Check main data cache as proxy
+         try {
+             await fetchAndCachePPPData();
+         } catch (error) {
+             console.error("Failed to determine data timestamp due to fetch error:", error);
+             return null; // Return null on failure
+         }
+     }
+     return dataLastUpdatedTimestamp; // Return cached timestamp or null if fetch failed
 }
 
 
