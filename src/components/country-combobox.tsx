@@ -29,6 +29,7 @@ interface CountryComboboxProps {
   emptyMessage?: string;
   disabled?: boolean;
   className?: string;
+  label?: string; // Optional label for aria-label
 }
 
 export function CountryCombobox({
@@ -39,6 +40,7 @@ export function CountryCombobox({
   emptyMessage = "No country found.",
   disabled = false,
   className,
+  label = "Country", // Default label
 }: CountryComboboxProps) {
   const [open, setOpen] = React.useState(false)
 
@@ -55,6 +57,7 @@ export function CountryCombobox({
           aria-expanded={open}
           className={cn("w-full justify-between text-sm", !value && "text-muted-foreground", className)}
           disabled={disabled}
+          aria-label={`Select ${label}`} // More specific aria-label
         >
           {selectedOption
             ? `${selectedOption.name} (${selectedOption.code})`
@@ -63,7 +66,17 @@ export function CountryCombobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
-        <Command shouldFilter={true}> {/* Enable default filtering */}
+        <Command
+          shouldFilter={true} // Enable default filtering
+          aria-label={`Search for ${label}`} // Add aria-label for Command
+          filter={(itemValue, search) => {
+            // Customize filtering logic if needed, default is usually sufficient
+            // Example: Ensure case-insensitive search on the combined name and code
+            const lowerSearch = search.toLowerCase();
+            const lowerItemValue = itemValue.toLowerCase();
+            return lowerItemValue.includes(lowerSearch) ? 1 : 0;
+          }}
+        >
           <CommandInput placeholder="Search country..." />
           <CommandList>
             <CommandEmpty>{emptyMessage}</CommandEmpty>
@@ -72,8 +85,14 @@ export function CountryCombobox({
                 <CommandItem
                   key={option.code}
                   value={`${option.name} ${option.code}`} // Value used for filtering/searching
-                  onSelect={() => {
-                    onChange(option.code === value ? "" : option.code); // Allow deselecting or select new
+                  onSelect={(currentValue) => { // currentValue is the `value` prop passed to CommandItem
+                    // Find the option that matches the selected value
+                    const selected = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === currentValue.toLowerCase());
+                    if (selected) {
+                      onChange(selected.code === value ? "" : selected.code); // Allow deselecting or select new
+                    } else {
+                       onChange(""); // Fallback if somehow not found
+                    }
                     setOpen(false);
                   }}
                 >

@@ -333,6 +333,7 @@ export default function Home() {
                            placeholder="Select first country"
                            disabled={countryOptions.length === 0 || !formSchema}
                            emptyMessage={countryOptions.length === 0 ? "No countries loaded" : "No country found."}
+                           label="From Country" // Pass label
                          />
                        </FormControl>
                       <FormMessage />
@@ -370,6 +371,7 @@ export default function Home() {
                             placeholder="Select second country"
                             disabled={countryOptions.length === 0 || !formSchema}
                             emptyMessage={countryOptions.length === 0 ? "No countries loaded" : "No country found."}
+                            label="To Country" // Pass label
                           />
                        </FormControl>
                       <FormMessage />
