@@ -89,40 +89,22 @@ export function CountryCombobox({
               {options.map((option) => (
                 <CommandItem
                   key={option.code}
-                  value={`${option.name} ${option.code}`} // Value used for filtering/searching and passed to onSelect
-                  onSelect={(currentValue) => {
-                    // currentValue is the string from the 'value' prop of the selected CommandItem
-                    const selected = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === currentValue.toLowerCase());
-
-                    if (selected) {
-                      // Call onChange with the actual country code (e.g., 'USA')
-                      // Toggle selection: if clicking the already selected item, deselect it (pass "")
-                      onChange(selected.code === value ? "" : selected.code);
-                    } else {
-                       // Fallback if something goes wrong
-                       onChange("");
-                    }
-                    // Close the popover after selection
-                    setOpen(false);
+                  // Value used for filtering/searching should represent the item uniquely
+                  value={`${option.name} ${option.code}`}
+                   // Pass the actual country code directly to onSelect
+                  onSelect={() => {
+                     // Call onChange with the actual country code (e.g., 'USA')
+                     // Toggle selection: if clicking the already selected item, deselect it (pass "")
+                     onChange(option.code === value ? "" : option.code);
+                     // Close the popover after selection
+                     setOpen(false);
                   }}
-                  // Adding explicit onClick handler (though onSelect should handle this)
-                  // This can sometimes help in complex component interactions.
-                  // Remove if onSelect alone proves sufficient after testing.
-                  // onClick={() => {
-                  //   const currentValue = `${option.name} ${option.code}`;
-                  //   const selected = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === currentValue.toLowerCase());
-                  //   if (selected) {
-                  //     onChange(selected.code === value ? "" : selected.code);
-                  //   } else {
-                  //     onChange("");
-                  //   }
-                  //   setOpen(false);
-                  // }}
                 >
                   <Check
                     className={cn(
                       "mr-2 h-4 w-4",
-                      value === option.code ? "opacity-100" : "opacity-0"
+                      // Check if the current option's code matches the selected value
+                      value?.toLowerCase() === option.code.toLowerCase() ? "opacity-100" : "opacity-0"
                     )}
                   />
                   {option.name} ({option.code})
