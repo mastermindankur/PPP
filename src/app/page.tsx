@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+// Removed Accordion imports as it's no longer used for the explanation
 import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData, getDataLastUpdatedTimestamp } from '@/services/ppp-data';
 import { getCurrencyData } from '@/services/currency-data';
 import type { PPPData, CountryInfo, HistoricalDataPoint } from '@/services/ppp-data';
@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import PPPChart from '@/components/ppp-chart';
 import { ArrowRightLeft } from 'lucide-react';
 import { CountryCombobox } from '@/components/country-combobox';
-import { Separator } from "@/components/ui/separator"; // Import Separator
+import { Separator } from "@/components/ui/separator";
 
 // Define the base schema structure first
 const baseFormSchema = z.object({
@@ -475,8 +475,8 @@ export default function Home() {
                <h3 className="text-xl font-semibold text-center mb-2">Historical Purchasing Power Equivalent</h3>
                <p className="text-sm text-muted-foreground text-center mb-4">
                  {/* Dynamically explain what the chart shows */}
-                 Trend showing the equivalent value in {result.country2Name} ({result.currency2?.currencySymbol || ''})
-                 for {result.currency1?.currencySymbol || ''}{result.baseAmount.toLocaleString()} from {result.country1Name} over the years.
+                  Trend showing the equivalent value in {result.country2Name} ({result.currency2?.currencySymbol || ''})
+                  for {result.currency1?.currencySymbol || ''}{result.baseAmount.toLocaleString()} from {result.country1Name} over the years.
                </p>
                {isFetchingHistoricalData ? (
                   <div className="flex justify-center items-center h-64">
@@ -499,29 +499,30 @@ export default function Home() {
         </CardContent>
       </Card>
 
-       {/* PPP Explanation Accordion */}
-       <Accordion type="single" collapsible className="w-full max-w-2xl mt-8">
-         <AccordionItem value="item-1">
-           <AccordionTrigger className="text-lg font-medium">What is Purchasing Power Parity (PPP)?</AccordionTrigger>
-           <AccordionContent className="text-base text-muted-foreground space-y-3">
-             <p className="text-justify">
-               Purchasing Power Parity (PPP) is a way to compare the cost of living between countries.
-               It shows how much money you would need in one country to buy the same goods and services
-               you could buy for a certain amount in another country.
-             </p>
-             <p className="text-justify">
-               Using this calculator, you can see if a product or lifestyle is cheaper or more expensive
-               in a different country.
-             </p>
-             <p className="text-justify">
-               To use the calculator, select the two countries you want to compare, enter the amount you are
-               spending (or want to spend) in your home country, and the calculator will show you the
-               equivalent amount needed in the other country based on their cost of living. This helps you
-               plan your expenses better when traveling, working abroad, or making investment decisions.
-             </p>
-           </AccordionContent>
-         </AccordionItem>
-       </Accordion>
+       {/* PPP Explanation Card - Replaced Accordion */}
+       <Card className="w-full max-w-2xl mt-8 shadow-md rounded-xl border">
+            <CardHeader>
+                <CardTitle className="text-lg font-semibold text-primary">What is Purchasing Power Parity (PPP)?</CardTitle>
+            </CardHeader>
+            <CardContent className="text-base text-muted-foreground space-y-3 pt-0"> {/* Ensure pt-0 here */}
+                <p className="text-justify">
+                    Purchasing Power Parity (PPP) is a way to compare the cost of living between countries.
+                    It shows how much money you would need in one country to buy the same goods and services
+                    you could buy for a certain amount in another country.
+                </p>
+                <p className="text-justify">
+                    Using this calculator, you can see if a product or lifestyle is cheaper or more expensive
+                    in a different country.
+                </p>
+                <p className="text-justify">
+                    To use the calculator, select the two countries you want to compare, enter the amount you are
+                    spending (or want to spend) in your home country, and the calculator will show you the
+                    equivalent amount needed in the other country based on their cost of living. This helps you
+                    plan your expenses better when traveling, working abroad, or making investment decisions.
+                </p>
+            </CardContent>
+        </Card>
+
 
         {/* Footer Separator */}
        <Separator className="w-full max-w-2xl mt-8 mb-4" />
@@ -541,3 +542,4 @@ export default function Home() {
     </main>
   );
 }
+
