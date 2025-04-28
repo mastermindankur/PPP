@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import PPPChart from '@/components/ppp-chart';
 import { ArrowRightLeft } from 'lucide-react';
 import { CountryCombobox } from '@/components/country-combobox';
+import { Separator } from "@/components/ui/separator"; // Import Separator
 
 // Define the base schema structure first
 const baseFormSchema = z.object({
@@ -522,7 +523,10 @@ export default function Home() {
          </AccordionItem>
        </Accordion>
 
-       <footer className="mt-8 mb-8 text-center text-sm text-muted-foreground px-4">
+        {/* Footer Separator */}
+       <Separator className="w-full max-w-2xl mt-8 mb-4" />
+
+       <footer className="mb-8 text-center text-sm text-muted-foreground px-4 w-full max-w-2xl">
          Data sourced from World Bank (Indicator: PA.NUS.PPP).{' '}
          {/* Display data timestamp */}
          {dataTimestamp ? `${dataTimestamp}. ` : ''}
