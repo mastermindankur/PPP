@@ -9,7 +9,8 @@ import * as z from 'zod';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// Remove Select import
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData } from '@/services/ppp-data';
@@ -19,6 +20,7 @@ import type { CurrencyData } from '@/services/currency-data';
 import { Skeleton } from "@/components/ui/skeleton";
 import PPPChart from '@/components/ppp-chart';
 import { ArrowRightLeft } from 'lucide-react'; // Import swap icon
+import { CountryCombobox } from '@/components/country-combobox'; // Import the new Combobox
 
 // Define the base schema structure first
 const baseFormSchema = z.object({
@@ -300,32 +302,21 @@ export default function Home() {
                   render={({ field }) => (
                     <FormItem className="flex-1 w-full">
                       <FormLabel>From Country</FormLabel>
-                      <Select
-                        onValueChange={(value) => {
-                          field.onChange(value);
-                          setResult(null);
-                          setHistoricalData(null);
-                          setError(null);
-                        }}
-                        value={field.value}
-                        disabled={countryOptions.length === 0}
-                       >
-                        <FormControl>
-                           <SelectTrigger>
-                            <SelectValue placeholder="Select first country" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {countryOptions.map((country) => (
-                            <SelectItem key={country.code} value={country.code}>
-                              {country.name} ({country.code})
-                            </SelectItem>
-                          ))}
-                           {countryOptions.length === 0 && (
-                              <SelectItem value="loading" disabled>No countries loaded</SelectItem>
-                           )}
-                        </SelectContent>
-                      </Select>
+                       <FormControl>
+                         <CountryCombobox
+                           options={countryOptions}
+                           value={field.value}
+                           onChange={(value) => {
+                             field.onChange(value);
+                             setResult(null);
+                             setHistoricalData(null);
+                             setError(null);
+                           }}
+                           placeholder="Select first country"
+                           disabled={countryOptions.length === 0}
+                           emptyMessage={countryOptions.length === 0 ? "No countries loaded" : "No country found."}
+                         />
+                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -348,32 +339,21 @@ export default function Home() {
                   render={({ field }) => (
                     <FormItem className="flex-1 w-full">
                       <FormLabel>To Country</FormLabel>
-                      <Select
-                        onValueChange={(value) => {
-                           field.onChange(value);
-                           setResult(null);
-                           setHistoricalData(null);
-                           setError(null);
-                        }}
-                        value={field.value}
-                        disabled={countryOptions.length === 0}
-                        >
-                         <FormControl>
-                           <SelectTrigger>
-                              <SelectValue placeholder="Select second country" />
-                           </SelectTrigger>
-                         </FormControl>
-                        <SelectContent>
-                          {countryOptions.map((country) => (
-                            <SelectItem key={country.code} value={country.code}>
-                               {country.name} ({country.code})
-                            </SelectItem>
-                          ))}
-                           {countryOptions.length === 0 && (
-                              <SelectItem value="loading" disabled>No countries loaded</SelectItem>
-                           )}
-                        </SelectContent>
-                      </Select>
+                       <FormControl>
+                          <CountryCombobox
+                            options={countryOptions}
+                            value={field.value}
+                            onChange={(value) => {
+                               field.onChange(value);
+                               setResult(null);
+                               setHistoricalData(null);
+                               setError(null);
+                            }}
+                            placeholder="Select second country"
+                            disabled={countryOptions.length === 0}
+                            emptyMessage={countryOptions.length === 0 ? "No countries loaded" : "No country found."}
+                          />
+                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -517,5 +497,3 @@ export default function Home() {
     </main>
   );
 }
-
-    
