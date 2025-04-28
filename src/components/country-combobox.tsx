@@ -86,14 +86,21 @@ export function CountryCombobox({
                   key={option.code}
                   value={`${option.name} ${option.code}`} // Value used for filtering/searching
                   onSelect={(currentValue) => { // currentValue is the `value` prop passed to CommandItem
-                    // Find the option that matches the selected value
-                    const selected = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === currentValue.toLowerCase());
-                    if (selected) {
-                      onChange(selected.code === value ? "" : selected.code); // Allow deselecting or select new
-                    } else {
-                       onChange(""); // Fallback if somehow not found
-                    }
+                    // Ensure popover closes immediately on selection (click or enter)
                     setOpen(false);
+
+                    // Find the option that matches the selected value string
+                    const selected = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === currentValue.toLowerCase());
+
+                    if (selected) {
+                      // Call onChange with the country code.
+                      // Handle deselecting if the same item is chosen again (optional, depends on desired behavior)
+                      onChange(selected.code === value ? "" : selected.code);
+                    } else {
+                       // Fallback if somehow not found (shouldn't typically happen)
+                       onChange("");
+                    }
+                    // Note: setOpen(false) is called *before* onChange now.
                   }}
                 >
                   <Check
