@@ -10,18 +10,16 @@ import * as z from 'zod';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-// Remove Select import
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"; // Import Accordion components
-import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData, getDataLastUpdatedTimestamp } from '@/services/ppp-data'; // Added getDataLastUpdatedTimestamp
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData, getDataLastUpdatedTimestamp } from '@/services/ppp-data';
 import { getCurrencyData } from '@/services/currency-data';
 import type { PPPData, CountryInfo, HistoricalDataPoint } from '@/services/ppp-data';
 import type { CurrencyData } from '@/services/currency-data';
 import { Skeleton } from "@/components/ui/skeleton";
 import PPPChart from '@/components/ppp-chart';
-import { ArrowRightLeft } from 'lucide-react'; // Import swap icon
-import { CountryCombobox } from '@/components/country-combobox'; // Import the new Combobox
+import { ArrowRightLeft } from 'lucide-react';
+import { CountryCombobox } from '@/components/country-combobox';
 
 // Define the base schema structure first
 const baseFormSchema = z.object({
@@ -473,7 +471,12 @@ export default function Home() {
            {/* Historical Data Chart */}
            {result && !isLoading && (
              <div className="mt-8">
-               <h3 className="text-xl font-semibold text-center mb-4">Historical Purchasing Power Equivalent</h3>
+               <h3 className="text-xl font-semibold text-center mb-2">Historical Purchasing Power Equivalent</h3>
+               <p className="text-sm text-muted-foreground text-center mb-4">
+                 {/* Dynamically explain what the chart shows */}
+                 Trend showing the equivalent value in {result.country2Name} ({result.currency2?.currencySymbol || ''})
+                 for {result.currency1?.currencySymbol || ''}{result.baseAmount.toLocaleString()} from {result.country1Name} over the years.
+               </p>
                {isFetchingHistoricalData ? (
                   <div className="flex justify-center items-center h-64">
                      <Skeleton className="h-full w-full" />
@@ -523,11 +526,14 @@ export default function Home() {
          Data sourced from World Bank (Indicator: PA.NUS.PPP).{' '}
          {/* Display data timestamp */}
          {dataTimestamp ? `${dataTimestamp}. ` : ''}
-         Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data. The chart shows the historical equivalent value in {result?.country2Name || 'the second country'}'s currency for the amount entered in {result?.country1Name || 'the first country'}'s currency.
-      </footer>
+         Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data.
+         {/* Updated dynamic explanation for the chart */}
+         {result && historicalData && historicalData.length > 0 && (
+            <>
+                {' '}The chart shows the historical equivalent value in {result?.country2Name || 'the second country'}'s currency for the amount entered in {result?.country1Name || 'the first country'}'s currency.
+            </>
+         )}
+       </footer>
     </main>
   );
 }
-
-
-    
