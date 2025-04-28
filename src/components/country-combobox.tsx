@@ -69,17 +69,19 @@ export function CountryCombobox({
         <Command
           shouldFilter={true} // Enable default filtering
           aria-label={`Search for ${label}`} // Add aria-label for Command
+          // Use a simple filter based on name and code inclusion
           filter={(itemValue, search) => {
-            // Customize filtering logic if needed, default is usually sufficient
-            // Example: Ensure case-insensitive search on the combined name and code
-            const lowerSearch = search.toLowerCase();
-            const lowerItemValue = itemValue.toLowerCase();
-            // Prioritize matches starting with the search term
-            if (lowerItemValue.startsWith(lowerSearch)) {
-               return 1;
-            }
-            // Then allow any inclusion
-            return lowerItemValue.includes(lowerSearch) ? 0.5 : 0;
+             const lowerSearch = search.toLowerCase();
+             const lowerItemValue = itemValue.toLowerCase();
+             // Prioritize matches starting with the search term in name or code
+             const name = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === lowerItemValue)?.name.toLowerCase() || '';
+             const code = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === lowerItemValue)?.code.toLowerCase() || '';
+
+             if (name.startsWith(lowerSearch) || code.startsWith(lowerSearch)) {
+                return 1;
+             }
+             // Then allow any inclusion
+             return lowerItemValue.includes(lowerSearch) ? 0.5 : 0;
           }}
         >
           <CommandInput placeholder="Search country..." />
@@ -89,18 +91,17 @@ export function CountryCombobox({
               {options.map((option) => (
                 <CommandItem
                   key={option.code}
-                  // Value used for filtering/searching should represent the item uniquely
-                  value={`${option.name} ${option.code}`}
-                   // Pass the actual country code directly to onSelect
-                  // This handler is triggered by both keyboard (Enter) and mouse click.
+                  // Value used for filtering/searching should represent the item uniquely and contain searchable text
+                  value={`${option.name} (${option.code})`} // Combine name and code for searching
+                   // onSelect is triggered by BOTH keyboard (Enter) and mouse click in cmdk
                   onSelect={() => {
-                     // Call onChange with the selected country code.
+                     // Call the passed onChange function with the selected country code
                      onChange(option.code);
-                     // Close the popover after selection.
+                     // Close the popover after selection
                      setOpen(false);
                   }}
                   // Apply pointer cursor to indicate clickability
-                  className="cursor-pointer"
+                  className="cursor-pointer text-sm" // Added text-sm for consistency
                 >
                   <Check
                     className={cn(
@@ -109,7 +110,8 @@ export function CountryCombobox({
                       value?.toLowerCase() === option.code.toLowerCase() ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  {option.name} ({option.code})
+                   {/* Display name and code */}
+                  <span>{option.name} ({option.code})</span>
                 </CommandItem>
               ))}
             </CommandGroup>
