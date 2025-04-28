@@ -1,9 +1,8 @@
 
-
 "use client";
 
 import type React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -12,13 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"; // Import Accordion components
-import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData } from '@/services/ppp-data'; // Added getLatestAvailableYear, getHistoricalPPPData
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData } from '@/services/ppp-data';
 import { getCurrencyData } from '@/services/currency-data';
 import type { PPPData, CountryInfo, HistoricalDataPoint } from '@/services/ppp-data';
 import type { CurrencyData } from '@/services/currency-data';
 import { Skeleton } from "@/components/ui/skeleton";
-import PPPChart from '@/components/ppp-chart'; // Import the new chart component
+import PPPChart from '@/components/ppp-chart';
+import { ArrowRightLeft } from 'lucide-react'; // Import swap icon
 
 // Define the base schema structure first
 const baseFormSchema = z.object({
@@ -40,28 +40,27 @@ interface CalculationResult {
   currency2: CurrencyData | null;
   country1Name: string;
   country2Name: string;
-  year: number; // Add year to result
-  baseAmount: number; // Add base amount to result
+  year: number;
+  baseAmount: number;
 }
 
-// Renamed from ChartDataPoint to reflect the new data structure
 export type HistoricalEquivalentDataPoint = {
   year: number;
-  equivalentAmount: number; // Store the calculated equivalent amount for the chart
-  label: string; // Add a descriptive label for the tooltip (excluding the year)
+  equivalentAmount: number;
+  label: string;
 };
 
 
 export default function Home() {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(true); // Combined loading state
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dataLoadError, setDataLoadError] = useState<string | null>(null);
   const [countryOptions, setCountryOptions] = useState<CountryInfo[]>([]);
   const [latestYear, setLatestYear] = useState<number | null>(null);
-  const [formSchema, setFormSchema] = useState<z.ZodSchema<any> | null>(null); // State for the dynamic schema
-  const [historicalData, setHistoricalData] = useState<HistoricalEquivalentDataPoint[] | null>(null); // Updated state type
+  const [formSchema, setFormSchema] = useState<z.ZodSchema<any> | null>(null);
+  const [historicalData, setHistoricalData] = useState<HistoricalEquivalentDataPoint[] | null>(null);
   const [isFetchingHistoricalData, setIsFetchingHistoricalData] = useState(false);
 
 
@@ -71,7 +70,6 @@ export default function Home() {
       setIsInitialLoading(true);
       setDataLoadError(null);
       try {
-        // Fetch countries and latest year concurrently
         const [fetchedCountries, fetchedLatestYear] = await Promise.all([
           getCountries(),
           getLatestAvailableYear()
@@ -88,11 +86,11 @@ export default function Home() {
            setDataLoadError((prevError) => prevError ? `${prevError} Could not determine the latest data year.` : "Could not determine the latest data year.");
            console.warn("Latest year could not be determined.");
         } else {
-          // Dynamically create the full form schema once the latest year is known
+          // Dynamically create the full form schema
           const fullSchema = baseFormSchema.extend({
             year: z.preprocess(
               (val) => (val === "" ? undefined : Number(val)),
-              z.number().int().min(1990, "Year must be 1990 or later.") // Adjusted min year based on common data availability
+              z.number().int().min(1990, "Year must be 1990 or later.")
                 .max(fetchedLatestYear, `Data only available up to ${fetchedLatestYear}.`)
             ),
           });
@@ -109,35 +107,36 @@ export default function Home() {
     fetchInitialData();
   }, []); // Run only once on mount
 
-  // Initialize the form - Re-initialize when schema is ready
-  const form = useForm<BaseFormData & { year?: number }>({ // Add optional year initially
-    resolver: formSchema ? zodResolver(formSchema) : undefined, // Use dynamic schema when available
+  // Initialize the form
+  const form = useForm<BaseFormData & { year?: number }>({
+    resolver: formSchema ? zodResolver(formSchema) : undefined,
     defaultValues: {
       country1: '',
       country2: '',
       amount: 100,
-      // Default year will be set once latestYear is fetched
+      // Default year will be set in the useEffect below once latestYear is known
     },
   });
 
    // Effect to update default year once latestYear is fetched and schema is set
+   // Default to 2023 if available, otherwise use latestYear
    useEffect(() => {
      if (latestYear && formSchema) {
+       const defaultYear = latestYear >= 2023 ? 2023 : latestYear;
        form.reset({
          ...form.getValues(), // Keep other values
-         year: latestYear, // Set default year
+         year: defaultYear, // Set default year
        });
      }
    }, [latestYear, formSchema, form]); // Depend on latestYear and formSchema
 
 
-  async function onSubmit(values: BaseFormData & { year: number }) { // Year is now required
+  async function onSubmit(values: BaseFormData & { year: number }) {
     setIsLoading(true);
     setError(null);
     setResult(null);
-    setHistoricalData(null); // Reset historical data on new calculation
-    setIsFetchingHistoricalData(false); // Reset historical fetch state
-
+    setHistoricalData(null);
+    setIsFetchingHistoricalData(false);
 
     if (values.country1 === values.country2) {
       setError("Please select two different countries.");
@@ -146,14 +145,12 @@ export default function Home() {
     }
 
     try {
-      // Ensure country options are loaded
       if (countryOptions.length === 0) {
          setError("Country data is not available. Please wait or refresh.");
          setIsLoading(false);
          return;
       }
 
-      // Fetch PPP data using country *codes*
       const [pppData1, pppData2, currencyData1, currencyData2] = await Promise.all([
         getPPPData(values.country1, values.year),
         getPPPData(values.country2, values.year),
@@ -161,7 +158,6 @@ export default function Home() {
         getCurrencyData(values.country2),
       ]);
 
-      // Find country names from the fetched list
       const country1Info = countryOptions.find(c => c.code === values.country1);
       const country2Info = countryOptions.find(c => c.code === values.country2);
 
@@ -170,7 +166,6 @@ export default function Home() {
          setIsLoading(false);
          return;
       }
-
 
       if (!pppData1 || !pppData2) {
         setError(`PPP data not available for one or both selected countries/year combination (${country1Info.name}/${country2Info.name}, ${values.year}). Please try a different year or check data availability.`);
@@ -191,14 +186,13 @@ export default function Home() {
         currency2: currencyData2,
         country1Name: country1Info.name,
         country2Name: country2Info.name,
-        year: values.year, // Include year in the result
-        baseAmount: values.amount, // Include base amount
+        year: values.year,
+        baseAmount: values.amount,
       };
       setResult(resultData);
 
-      // After successful calculation, fetch historical data, passing the base amount and names
+      // Fetch historical data after successful calculation
       fetchHistorical(values.country1, values.country2, country1Info.name, country2Info.name, values.amount, currencyData1?.currencySymbol, currencyData2?.currencySymbol);
-
 
     } catch (err) {
       console.error("Calculation error:", err);
@@ -208,56 +202,65 @@ export default function Home() {
     }
   }
 
-  // Function to fetch and process historical data for equivalent amount chart
-  const fetchHistorical = async (code1: string, code2: string, name1: string, name2: string, baseAmount: number, symbol1?: string, symbol2?: string) => {
+  // Fetch historical data
+  const fetchHistorical = useCallback(async (code1: string, code2: string, name1: string, name2: string, baseAmount: number, symbol1?: string, symbol2?: string) => {
     setIsFetchingHistoricalData(true);
-    setHistoricalData(null); // Clear previous chart data
+    setHistoricalData(null);
     try {
       const [history1, history2] = await Promise.all([
         getHistoricalPPPData(code1),
         getHistoricalPPPData(code2),
       ]);
 
-      const combinedData: HistoricalEquivalentDataPoint[] = []; // Use new type
+      const combinedData: HistoricalEquivalentDataPoint[] = [];
       const years = new Set([...history1.map(d => d.year), ...history2.map(d => d.year)]);
 
       years.forEach(year => {
         const ppp1 = history1.find(d => d.year === year)?.pppConversionFactor;
         const ppp2 = history2.find(d => d.year === year)?.pppConversionFactor;
 
-        if (ppp1 && ppp2 && ppp1 > 0 && ppp2 > 0) { // Ensure both values exist and are valid
+        if (ppp1 && ppp2 && ppp1 > 0 && ppp2 > 0) {
           const pppRatio = ppp2 / ppp1;
-          const equivalentAmount = baseAmount * pppRatio; // Calculate equivalent amount for this year
-          // Construct the descriptive label for the tooltip (without the year)
+          const equivalentAmount = baseAmount * pppRatio;
           const baseAmountString = `${symbol1 || ''}${baseAmount.toLocaleString()}`;
-          const label = `Equivalent value of ${baseAmountString} (${name1}) in ${name2}`; // Tooltip base label
+          const label = `Equivalent value of ${baseAmountString} (${name1}) in ${name2}`;
 
           combinedData.push({
             year: year,
-            equivalentAmount: equivalentAmount, // Store equivalent amount
-            label: label // Store the descriptive label (without year)
+            equivalentAmount: equivalentAmount,
+            label: label
           });
         }
       });
 
-      // Sort by year
       combinedData.sort((a, b) => a.year - b.year);
 
       if (combinedData.length > 0) {
         setHistoricalData(combinedData);
       } else {
          console.warn(`No common historical PPP data found for ${name1} and ${name2}.`);
-         // Optionally set an error or message state for the chart
       }
 
     } catch (error) {
       console.error("Failed to fetch or process historical PPP data:", error);
-       // Optionally set an error or message state for the chart
     } finally {
       setIsFetchingHistoricalData(false);
     }
-  };
+  }, []); // Removed dependencies as it's called with explicit params
 
+  // Function to handle swapping countries
+  const handleSwapCountries = () => {
+    const country1Value = form.getValues('country1');
+    const country2Value = form.getValues('country2');
+
+    if (country1Value || country2Value) { // Only swap if at least one is selected
+      form.setValue('country1', country2Value, { shouldValidate: true });
+      form.setValue('country2', country1Value, { shouldValidate: true });
+      setResult(null); // Clear results
+      setHistoricalData(null); // Clear historical data
+      setError(null); // Clear errors
+    }
+  };
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-start p-4 sm:p-8 md:p-12 bg-background">
@@ -274,9 +277,10 @@ export default function Home() {
           )}
           {isInitialLoading ? (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <Skeleton className="h-10 w-full" />
-                 <Skeleton className="h-10 w-full" />
+              <div className="flex items-center gap-4">
+                 <Skeleton className="h-10 flex-1" />
+                 <Skeleton className="h-8 w-8" />
+                 <Skeleton className="h-10 flex-1" />
               </div>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <Skeleton className="h-10 w-full" />
@@ -285,27 +289,29 @@ export default function Home() {
                <Skeleton className="h-10 w-full" />
                <p className="text-center text-muted-foreground">Loading initial data from World Bank...</p>
             </div>
-          ) : formSchema && ( // Only render form when schema is ready
+          ) : formSchema && (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Country Selectors + Swap Button */}
+              <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4">
                 <FormField
                   control={form.control}
                   name="country1"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="flex-1 w-full">
                       <FormLabel>From Country</FormLabel>
                       <Select
                         onValueChange={(value) => {
                           field.onChange(value);
-                          setResult(null); // Clear results when country changes
+                          setResult(null);
                           setHistoricalData(null);
+                          setError(null);
                         }}
-                        value={field.value} // Use value for controlled component
+                        value={field.value}
                         disabled={countryOptions.length === 0}
                        >
                         <FormControl>
-                           <SelectTrigger className="w-full">
+                           <SelectTrigger>
                             <SelectValue placeholder="Select first country" />
                           </SelectTrigger>
                         </FormControl>
@@ -324,23 +330,36 @@ export default function Home() {
                     </FormItem>
                   )}
                 />
+                {/* Swap Button */}
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleSwapCountries}
+                    className="mt-2 md:mt-6 flex-shrink-0" // Adjust margin for alignment
+                    aria-label="Swap countries"
+                    disabled={countryOptions.length === 0}
+                >
+                    <ArrowRightLeft className="h-5 w-5 text-muted-foreground" />
+                </Button>
                 <FormField
                   control={form.control}
                   name="country2"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="flex-1 w-full">
                       <FormLabel>To Country</FormLabel>
                       <Select
                         onValueChange={(value) => {
                            field.onChange(value);
-                           setResult(null); // Clear results when country changes
+                           setResult(null);
                            setHistoricalData(null);
+                           setError(null);
                         }}
-                        value={field.value} // Use value for controlled component
+                        value={field.value}
                         disabled={countryOptions.length === 0}
                         >
                          <FormControl>
-                           <SelectTrigger className="w-full">
+                           <SelectTrigger>
                               <SelectValue placeholder="Select second country" />
                            </SelectTrigger>
                          </FormControl>
@@ -360,6 +379,7 @@ export default function Home() {
                   )}
                 />
               </div>
+              {/* Amount and Year */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <FormField
                     control={form.control}
@@ -368,15 +388,14 @@ export default function Home() {
                       <FormItem>
                         <FormLabel>Amount ({result?.currency1?.currencySymbol || countryOptions.find(c => c.code === form.getValues('country1'))?.currencySymbol || '...'})</FormLabel>
                         <FormControl>
-                           {/* Ensure value is handled correctly for number input */}
                           <Input
                              type="number"
                              placeholder="Enter amount"
                              step="any"
-                             min="0.01" // Ensure a positive amount can be entered
+                             min="0.01"
                              className="bg-secondary focus:bg-background"
                              {...field}
-                             value={field.value ?? ''} // Handle potential undefined/null
+                             value={field.value ?? ''}
                              onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                              />
                         </FormControl>
@@ -391,16 +410,15 @@ export default function Home() {
                       <FormItem>
                         <FormLabel>Year</FormLabel>
                         <FormControl>
-                           {/* Ensure value is handled correctly for number input */}
                            <Input
                              type="number"
-                             placeholder={`e.g., ${latestYear || new Date().getFullYear()}`}
-                             min="1990" // Adjusted min year
-                             max={latestYear ?? new Date().getFullYear()} // Use dynamic max year
-                             step="1" // Only allow whole numbers for year
+                             placeholder={`e.g., ${latestYear && latestYear >= 2023 ? 2023 : (latestYear || new Date().getFullYear())}`}
+                             min="1990"
+                             max={latestYear ?? new Date().getFullYear()}
+                             step="1"
                              className="bg-secondary focus:bg-background"
                              {...field}
-                             value={field.value ?? ''} // Handle potential undefined/null
+                             value={field.value ?? ''}
                              onChange={e => field.onChange(e.target.value === '' ? undefined : parseInt(e.target.value, 10))}
                              />
                         </FormControl>
@@ -412,7 +430,6 @@ export default function Home() {
                     )}
                  />
               </div>
-
 
               <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading || isInitialLoading || countryOptions.length === 0}>
                 {isLoading ? 'Calculating...' : 'Calculate PPP'}
@@ -446,7 +463,7 @@ export default function Home() {
           )}
 
            {/* Historical Data Chart */}
-           {result && !isLoading && ( // Show chart area only after a successful calculation
+           {result && !isLoading && (
              <div className="mt-8">
                <h3 className="text-xl font-semibold text-center mb-4">Historical Purchasing Power Equivalent</h3>
                {isFetchingHistoricalData ? (
@@ -457,12 +474,11 @@ export default function Home() {
                ) : historicalData && historicalData.length > 0 ? (
                   <PPPChart
                      data={historicalData}
-                     currencySymbol={result?.currency2?.currencySymbol || ''} // Pass currency symbol of the second country
+                     currencySymbol={result?.currency2?.currencySymbol || ''}
                   />
                ) : historicalData && historicalData.length === 0 ? (
                  <p className="text-center text-muted-foreground p-4 border rounded-md">No common historical data found for the selected countries.</p>
                ) : !isFetchingHistoricalData && !historicalData ? (
-                  // Initial state before historical data is fetched or if fetching failed
                   <p className="text-center text-muted-foreground p-4 border rounded-md">Historical data comparison will appear here.</p>
                ) : null}
              </div>
@@ -501,7 +517,5 @@ export default function Home() {
     </main>
   );
 }
-
-    
 
     
