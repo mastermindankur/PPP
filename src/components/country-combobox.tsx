@@ -74,7 +74,12 @@ export function CountryCombobox({
             // Example: Ensure case-insensitive search on the combined name and code
             const lowerSearch = search.toLowerCase();
             const lowerItemValue = itemValue.toLowerCase();
-            return lowerItemValue.includes(lowerSearch) ? 1 : 0;
+            // Prioritize matches starting with the search term
+            if (lowerItemValue.startsWith(lowerSearch)) {
+               return 1;
+            }
+            // Then allow any inclusion
+            return lowerItemValue.includes(lowerSearch) ? 0.5 : 0;
           }}
         >
           <CommandInput placeholder="Search country..." />
@@ -87,7 +92,7 @@ export function CountryCombobox({
                   value={`${option.name} ${option.code}`} // Value used for filtering/searching
                   onSelect={(currentValue) => { // currentValue is the `value` prop passed to CommandItem
                     // Ensure popover closes immediately on selection (click or enter)
-                    setOpen(false);
+                    setOpen(false); // Close the popover FIRST
 
                     // Find the option that matches the selected value string
                     const selected = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === currentValue.toLowerCase());
