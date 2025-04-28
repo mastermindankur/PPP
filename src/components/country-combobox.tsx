@@ -92,13 +92,15 @@ export function CountryCombobox({
                   // Value used for filtering/searching should represent the item uniquely
                   value={`${option.name} ${option.code}`}
                    // Pass the actual country code directly to onSelect
+                  // This handler is triggered by both keyboard (Enter) and mouse click.
                   onSelect={() => {
-                     // Call onChange with the actual country code (e.g., 'USA')
-                     // Toggle selection: if clicking the already selected item, deselect it (pass "")
-                     onChange(option.code === value ? "" : option.code);
-                     // Close the popover after selection
+                     // Call onChange with the selected country code.
+                     onChange(option.code);
+                     // Close the popover after selection.
                      setOpen(false);
                   }}
+                  // Apply pointer cursor to indicate clickability
+                  className="cursor-pointer"
                 >
                   <Check
                     className={cn(
