@@ -80,22 +80,27 @@ async function fetchAndCachePPPData(): Promise<void> {
 
     // Store the current time as a fallback timestamp
     const fetchStartTime = new Date();
+    let localLastUpdatedTimestamp: string | null = null; // Timestamp found in the file
 
     fetchPromise = (async () => {
-      let localLastUpdatedTimestamp: string | null = null; // Timestamp found in the file
       try {
-          const response = await fetch(worldBankApiUrl, { cache: 'force-cache' }); // Use caching
+          const response = await fetch(worldBankApiUrl, { next: { revalidate: 3600 * 24 } }); // Revalidate daily
           if (!response.ok) {
               throw new Error(`Failed to fetch PPP data from World Bank (Status: ${response.status})`);
           }
           const arrayBuffer = await response.arrayBuffer();
-          const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+          const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellDates: true }); // Try parsing dates
 
           // World Bank Excel usually names the data sheet like 'Data' or similar
           // Prioritize 'Data', then check common patterns
           let sheetName = '';
           let sheet = null;
-          const potentialSheetNames = ['Data', 'Sheet1', 'API_PA.NUS.PPP_DS2_en_excel_v2']; // Common names + specific name observed
+          // Observed sheet name structure can vary, check standard and common variations
+          const potentialSheetNames = [
+            'Data',
+            'API_PA.NUS.PPP_DS2_en_excel_v2', // Specific name observed before
+            'Sheet1'
+          ];
 
           for (const name of potentialSheetNames) {
               if (workbook.SheetNames.includes(name)) {
@@ -105,16 +110,22 @@ async function fetchAndCachePPPData(): Promise<void> {
               }
           }
 
-          // Fallback: try the first sheet if specific names aren't found
+          // Fallback: try the first sheet if specific names aren't found and it's likely data
           if (!sheet && workbook.SheetNames.length > 0) {
-               // Check if the first sheet *isn't* obviously metadata
-               if (!workbook.SheetNames[0].toLowerCase().includes('metadata')) {
-                 sheetName = workbook.SheetNames[0];
+               const firstSheetName = workbook.SheetNames[0];
+               // Avoid clearly metadata sheets
+               if (!firstSheetName.toLowerCase().includes('metadata') && !firstSheetName.toLowerCase().includes('notes')) {
+                 sheetName = firstSheetName;
                  sheet = workbook.Sheets[sheetName];
+                 console.warn(`Using fallback sheet: ${sheetName}`);
                } else if (workbook.SheetNames.length > 1) {
                   // If first is metadata, try the second sheet
-                  sheetName = workbook.SheetNames[1];
-                  sheet = workbook.Sheets[sheetName];
+                  const secondSheetName = workbook.SheetNames[1];
+                   if (!secondSheetName.toLowerCase().includes('metadata') && !secondSheetName.toLowerCase().includes('notes')) {
+                     sheetName = secondSheetName;
+                     sheet = workbook.Sheets[sheetName];
+                     console.warn(`Using second sheet as fallback: ${sheetName}`);
+                   }
                }
           }
 
@@ -131,8 +142,17 @@ async function fetchAndCachePPPData(): Promise<void> {
           const metadataRows = jsonData.slice(0, 5); // Check first 5 rows
           for (const row of metadataRows) {
               if (Array.isArray(row) && typeof row[0] === 'string' && row[0].trim() === 'Last Updated Date' && row.length > 1) {
-                  localLastUpdatedTimestamp = String(row[1]).trim(); // Assuming date is in the second column
-                  console.log(`Found 'Last Updated Date' in Excel: ${localLastUpdatedTimestamp}`);
+                  const dateValue = row[1];
+                  if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+                      // If cellDates parsed it as a Date object
+                      localLastUpdatedTimestamp = dateValue.toLocaleDateString('en-GB'); // Format as dd/mm/yyyy
+                  } else if (typeof dateValue === 'string' || typeof dateValue === 'number') {
+                      // Keep raw string/number if not parsed as Date
+                      localLastUpdatedTimestamp = String(dateValue).trim();
+                  }
+                  if (localLastUpdatedTimestamp) {
+                      console.log(`Found 'Last Updated Date' in Excel: ${localLastUpdatedTimestamp}`);
+                  }
                   break;
               }
           }
@@ -239,11 +259,17 @@ async function fetchAndCachePPPData(): Promise<void> {
           historicalDataCache = tempHistoricalDataCache;
           countriesCache = uniqueCountries;
           cachedLatestYear = latestAvailableYear > 0 ? latestAvailableYear : null; // Set to null if no valid years
-          // Use the timestamp found in the file, or fall back to the fetch start time
-          dataLastUpdatedTimestamp = localLastUpdatedTimestamp || `fetched ${fetchStartTime.toLocaleDateString()}`;
 
+          // Set the timestamp string
+          if (localLastUpdatedTimestamp) {
+              dataLastUpdatedTimestamp = `Source data updated: ${localLastUpdatedTimestamp}`;
+          } else {
+              // Format fetch time as dd/mm/yyyy
+              const formattedFetchTime = fetchStartTime.toLocaleDateString('en-GB');
+              dataLastUpdatedTimestamp = `Data fetched: ${formattedFetchTime}`;
+          }
 
-          console.log(`Successfully fetched and cached data. ${uniqueCountries.length} countries found. Latest year: ${cachedLatestYear}. Data timestamp: ${dataLastUpdatedTimestamp}`);
+          console.log(`Successfully fetched and cached data. ${uniqueCountries.length} countries found. Latest year: ${cachedLatestYear}. Timestamp: ${dataLastUpdatedTimestamp}`);
 
       } catch (error) {
           console.error('Error fetching or processing World Bank PPP data:', error);
@@ -306,10 +332,11 @@ export async function getLatestAvailableYear(): Promise<number | null> {
 
 /**
  * Retrieves the timestamp indicating when the data was last updated or fetched.
- * Tries to get the "Last Updated Date" from the Excel file first, otherwise uses the fetch time.
+ * Tries to get the "Last Updated Date" from the Excel file first (formatted dd/mm/yyyy if possible),
+ * otherwise uses the fetch time (formatted dd/mm/yyyy). Includes context label.
  * If the cache is empty, it triggers the data fetching process.
  *
- * @returns A promise that resolves to the data timestamp string or null if data cannot be loaded.
+ * @returns A promise that resolves to the data timestamp string (e.g., "Source data updated: dd/mm/yyyy") or null if data cannot be loaded.
  */
 export async function getDataLastUpdatedTimestamp(): Promise<string | null> {
      // Ensure data is fetched if needed
@@ -321,7 +348,7 @@ export async function getDataLastUpdatedTimestamp(): Promise<string | null> {
              return null; // Return null on failure
          }
      }
-     return dataLastUpdatedTimestamp; // Return cached timestamp or null if fetch failed
+     return dataLastUpdatedTimestamp; // Return cached timestamp (with label) or null if fetch failed
 }
 
 

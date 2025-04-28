@@ -74,16 +74,19 @@ export default function Home() {
       setIsInitialLoading(true);
       setDataLoadError(null);
       try {
+        // Fetch all data concurrently
         const [fetchedCountries, fetchedLatestYear, fetchedTimestamp] = await Promise.all([
           getCountries(),
           getLatestAvailableYear(),
           getDataLastUpdatedTimestamp() // Fetch timestamp
         ]);
 
+        // Set state after all fetches complete
         setCountryOptions(fetchedCountries);
         setLatestYear(fetchedLatestYear);
         setDataTimestamp(fetchedTimestamp); // Set timestamp state
 
+        // Handle potential issues after setting state
         if (fetchedCountries.length === 0) {
           setDataLoadError("Could not load country list. Please check your connection or try again later.");
           console.warn("Country list is empty after fetching.");
@@ -92,7 +95,7 @@ export default function Home() {
            setDataLoadError((prevError) => prevError ? `${prevError} Could not determine the latest data year.` : "Could not determine the latest data year.");
            console.warn("Latest year could not be determined.");
         } else {
-          // Dynamically create the full form schema
+          // Dynamically create the full form schema only if latestYear is available
           const fullSchema = baseFormSchema.extend({
             year: z.preprocess(
               (val) => (val === "" ? undefined : Number(val)),
@@ -105,7 +108,9 @@ export default function Home() {
 
       } catch (err) {
         console.error("Failed to fetch initial data:", err);
-        setDataLoadError("Failed to load required data. An error occurred.");
+        setDataLoadError("Failed to load required data. An error occurred. Please try refreshing the page.");
+        // Ensure form schema is not set if data loading failed fundamentally
+        setFormSchema(null);
       } finally {
         setIsInitialLoading(false);
       }
@@ -113,26 +118,27 @@ export default function Home() {
     fetchInitialData();
   }, []); // Run only once on mount
 
+
   // Initialize the form
   const form = useForm<BaseFormData & { year?: number }>({
-    resolver: formSchema ? zodResolver(formSchema) : undefined,
+    resolver: formSchema ? zodResolver(formSchema) : undefined, // Resolver is set conditionally based on schema
     defaultValues: {
       country1: '',
       country2: '',
       amount: 100,
-      // Default year will be set in the useEffect below once latestYear is known
+      // Default year will be set in the useEffect below once latestYear is known and schema is ready
     },
   });
 
    // Effect to update default year once latestYear is fetched and schema is set
    // Default to 2023 if available, otherwise use latestYear
    useEffect(() => {
-     if (latestYear && formSchema) {
+     if (latestYear && formSchema && !form.getValues('year')) { // Only set if year isn't already set/modified by user
        const defaultYear = latestYear >= 2023 ? 2023 : latestYear;
        form.reset({
          ...form.getValues(), // Keep other values
          year: defaultYear, // Set default year
-       });
+       }, { keepDefaultValues: true }); // Prevent overwriting existing values if they were set
      }
    }, [latestYear, formSchema, form]); // Depend on latestYear and formSchema
 
@@ -303,7 +309,7 @@ export default function Home() {
                <Skeleton className="h-10 w-full" />
                <p className="text-center text-muted-foreground">Loading initial data from World Bank...</p>
             </div>
-          ) : formSchema && (
+          ) : formSchema ? ( // Render form only if schema is ready
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               {/* Country Selectors + Swap Button */}
@@ -325,7 +331,7 @@ export default function Home() {
                              setError(null);
                            }}
                            placeholder="Select first country"
-                           disabled={countryOptions.length === 0}
+                           disabled={countryOptions.length === 0 || !formSchema}
                            emptyMessage={countryOptions.length === 0 ? "No countries loaded" : "No country found."}
                          />
                        </FormControl>
@@ -341,7 +347,7 @@ export default function Home() {
                     onClick={handleSwapCountries}
                     className="mt-2 md:mt-6 flex-shrink-0" // Adjust margin for alignment
                     aria-label="Swap countries"
-                    disabled={countryOptions.length === 0}
+                    disabled={countryOptions.length === 0 || !formSchema}
                 >
                     <ArrowRightLeft className="h-5 w-5 text-muted-foreground" />
                 </Button>
@@ -362,7 +368,7 @@ export default function Home() {
                                setError(null);
                             }}
                             placeholder="Select second country"
-                            disabled={countryOptions.length === 0}
+                            disabled={countryOptions.length === 0 || !formSchema}
                             emptyMessage={countryOptions.length === 0 ? "No countries loaded" : "No country found."}
                           />
                        </FormControl>
@@ -390,6 +396,7 @@ export default function Home() {
                              {...field}
                              value={field.value ?? ''}
                              onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+                             disabled={!formSchema} // Disable if formSchema is not ready
                              />
                         </FormControl>
                         <FormMessage />
@@ -413,6 +420,7 @@ export default function Home() {
                              {...field}
                              value={field.value ?? ''}
                              onChange={e => field.onChange(e.target.value === '' ? undefined : parseInt(e.target.value, 10))}
+                              disabled={!formSchema} // Disable if formSchema is not ready
                              />
                         </FormControl>
                          <FormMessage />
@@ -424,11 +432,14 @@ export default function Home() {
                  />
               </div>
 
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading || isInitialLoading || countryOptions.length === 0}>
+              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading || isInitialLoading || countryOptions.length === 0 || !formSchema}>
                 {isLoading ? 'Calculating...' : 'Calculate PPP'}
               </Button>
             </form>
           </Form>
+          ) : (
+              // Show a message or different loading state if form schema couldn't be created
+              !isInitialLoading && <p className="text-center text-muted-foreground">Could not initialize form due to data loading issues.</p>
           )}
 
           {error && (
@@ -509,7 +520,7 @@ export default function Home() {
        <footer className="mt-8 mb-8 text-center text-sm text-muted-foreground px-4">
          Data sourced from World Bank (Indicator: PA.NUS.PPP).{' '}
          {/* Display data timestamp */}
-         {dataTimestamp ? `Data timestamp: ${dataTimestamp}. ` : ''}
+         {dataTimestamp ? `${dataTimestamp}. ` : ''}
          Currency symbols are illustrative. PPP values may not be available for all country/year combinations. For official use, consult the original World Bank data. The chart shows the historical equivalent value in {result?.country2Name || 'the second country'}'s currency for the amount entered in {result?.country1Name || 'the first country'}'s currency.
       </footer>
     </main>
