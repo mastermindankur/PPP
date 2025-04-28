@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 // Remove Select import
 // import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"; // Import Accordion components
 import { getPPPData, getCountries, getLatestAvailableYear, getHistoricalPPPData, getDataLastUpdatedTimestamp } from '@/services/ppp-data'; // Added getDataLastUpdatedTimestamp
 import { getCurrencyData } from '@/services/currency-data';
 import type { PPPData, CountryInfo, HistoricalDataPoint } from '@/services/ppp-data';
@@ -495,29 +495,29 @@ export default function Home() {
         </CardContent>
       </Card>
 
-        {/* PPP Explanation Accordion */}
-        <Accordion type="single" collapsible className="w-full max-w-2xl mt-8">
-          <AccordionItem value="item-1">
-            <AccordionTrigger className="text-lg font-medium">What is Purchasing Power Parity (PPP)?</AccordionTrigger>
-            <AccordionContent className="text-base text-muted-foreground space-y-3">
-              <p>
-                Purchasing Power Parity (PPP) is a way to compare the cost of living between countries.
-                It shows how much money you would need in one country to buy the same goods and services
-                you could buy for a certain amount in another country.
-              </p>
-              <p>
-                Using this calculator, you can see if a product or lifestyle is cheaper or more expensive
-                in a different country.
-              </p>
-              <p>
-                To use the calculator, select the two countries you want to compare, enter the amount you are
-                spending (or want to spend) in your home country, and the calculator will show you the
-                equivalent amount needed in the other country based on their cost of living. This helps you
-                plan your expenses better when traveling, working abroad, or making investment decisions.
-              </p>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+       {/* PPP Explanation Accordion */}
+       <Accordion type="single" collapsible className="w-full max-w-2xl mt-8">
+         <AccordionItem value="item-1">
+           <AccordionTrigger className="text-lg font-medium">What is Purchasing Power Parity (PPP)?</AccordionTrigger>
+           <AccordionContent className="text-base text-muted-foreground space-y-3">
+             <p>
+               Purchasing Power Parity (PPP) is a way to compare the cost of living between countries.
+               It shows how much money you would need in one country to buy the same goods and services
+               you could buy for a certain amount in another country.
+             </p>
+             <p>
+               Using this calculator, you can see if a product or lifestyle is cheaper or more expensive
+               in a different country.
+             </p>
+             <p>
+               To use the calculator, select the two countries you want to compare, enter the amount you are
+               spending (or want to spend) in your home country, and the calculator will show you the
+               equivalent amount needed in the other country based on their cost of living. This helps you
+               plan your expenses better when traveling, working abroad, or making investment decisions.
+             </p>
+           </AccordionContent>
+         </AccordionItem>
+       </Accordion>
 
        <footer className="mt-8 mb-8 text-center text-sm text-muted-foreground px-4">
          Data sourced from World Bank (Indicator: PA.NUS.PPP).{' '}
@@ -528,3 +528,6 @@ export default function Home() {
     </main>
   );
 }
+
+
+    
