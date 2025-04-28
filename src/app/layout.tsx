@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'PPP Compare', // Updated title
-  description: 'Purchasing Power Parity Calculator',
+  title: 'Purchasing Power Parity Calculator', // Updated title
+  description: 'Compare purchasing power across countries using World Bank PPP data.',
 };
 
 export default function RootLayout({

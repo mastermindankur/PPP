@@ -285,7 +285,7 @@ export default function Home() {
     <main className="flex min-h-screen flex-col items-center justify-start p-4 sm:p-8 md:p-12 bg-background">
       <Card className="w-full max-w-2xl shadow-lg rounded-xl mt-8">
         <CardHeader className="text-center pb-4">
-          <CardTitle className="text-3xl font-bold text-primary">PPP Compare</CardTitle>
+          <CardTitle className="text-3xl font-bold text-primary">Purchasing Power Parity Calculator</CardTitle>
           <CardDescription className="text-muted-foreground">
             Compare purchasing power across countries using World Bank data.
           </CardDescription>
