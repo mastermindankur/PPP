@@ -48,6 +48,12 @@ export function CountryCombobox({
     (option) => option.code.toLowerCase() === value?.toLowerCase()
   );
 
+  // Handler for both keyboard selection (onSelect) and click/touch (onClick)
+  const handleSelect = (optionCode: string) => {
+    onChange(optionCode);
+    setOpen(false); // Close the popover
+  };
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -74,8 +80,8 @@ export function CountryCombobox({
              const lowerSearch = search.toLowerCase();
              const lowerItemValue = itemValue.toLowerCase();
              // Prioritize matches starting with the search term in name or code
-             const name = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === lowerItemValue)?.name.toLowerCase() || '';
-             const code = options.find(opt => `${opt.name} ${opt.code}`.toLowerCase() === lowerItemValue)?.code.toLowerCase() || '';
+             const name = options.find(opt => `${opt.name} (${opt.code})`.toLowerCase() === lowerItemValue)?.name.toLowerCase() || '';
+             const code = options.find(opt => `${opt.name} (${opt.code})`.toLowerCase() === lowerItemValue)?.code.toLowerCase() || '';
 
              if (name.startsWith(lowerSearch) || code.startsWith(lowerSearch)) {
                 return 1;
@@ -93,12 +99,15 @@ export function CountryCombobox({
                   key={option.code}
                   // Value used for filtering/searching should represent the item uniquely and contain searchable text
                   value={`${option.name} (${option.code})`} // Combine name and code for searching
-                   // onSelect is triggered by BOTH keyboard (Enter) and mouse click in cmdk
+                   // onSelect is triggered primarily by keyboard (Enter) in cmdk
+                   // We use it to handle keyboard selection.
                   onSelect={() => {
-                     // Call the passed onChange function with the selected country code
-                     onChange(option.code);
-                     // Close the popover after selection
-                     setOpen(false);
+                    handleSelect(option.code);
+                  }}
+                  // onClick is added to explicitly handle mouse clicks and touch events,
+                  // ensuring selection works reliably across devices.
+                  onClick={() => {
+                    handleSelect(option.code);
                   }}
                   // Apply pointer cursor to indicate clickability
                   className="cursor-pointer text-sm" // Added text-sm for consistency
